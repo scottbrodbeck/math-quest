@@ -1,0 +1,5 @@
+# macOS
+.DS_Store
+
+# Claude Code local settings (editor/agent config, not part of the app)
+.claude/
