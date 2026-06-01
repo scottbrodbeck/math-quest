@@ -234,11 +234,11 @@
     let a, b, text, answer;
 
     if (op === "add") {
-      const cap = level <= 2 ? 20 : 100;
+      const cap = level <= 4 ? 20 : 100;
       a = rint(1, cap); b = rint(1, Math.max(1, cap - a));
       text = a + " + " + b; answer = a + b;
     } else if (op === "sub") {
-      const cap = level <= 2 ? 20 : 100;
+      const cap = level <= 4 ? 20 : 100;
       a = rint(1, cap); b = rint(0, a);           // keep answer >= 0
       text = a + " − " + b; answer = a - b;
     } else if (op === "mulEasy") {
