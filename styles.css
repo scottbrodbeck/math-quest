@@ -29,7 +29,7 @@
     flex-direction: column;
     align-items: center;
     justify-content: flex-start;
-    padding: 24px 16px 88px;
+    padding: 24px 16px 40px;
     overflow-x: hidden;
   }
 
@@ -417,6 +417,20 @@
   .fact .fa { color: var(--accent); }
   .fact.hidden { border-style: dashed; }
   .fact.hidden .fa { color: var(--muted); }
+
+  /* Footer */
+  .app-footer {
+    width: 100%;
+    max-width: 560px;
+    text-align: center;
+    color: rgba(255,255,255,0.6);
+    font-size: 13px;
+    line-height: 1.5;
+    margin-top: 28px;
+    /* The bottom gap lives on the footer's OWN box — a flex container drops its
+       padding-bottom from the scroll area, so body padding-bottom can't be relied on. */
+    padding-bottom: 48px;
+  }
 
   /* Confetti */
   #confetti { position: fixed; inset: 0; pointer-events: none; z-index: 50; overflow: hidden; }
