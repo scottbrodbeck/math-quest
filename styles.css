@@ -134,6 +134,14 @@
   .stat .num { font-size: 30px; font-weight: bold; color: var(--accent); }
   .stat .lbl { font-size: 12px; color: var(--muted); margin-top: 2px; }
 
+  .records-head {
+    margin-top: 20px;
+    text-align: center;
+    font-weight: bold;
+    font-size: 14px;
+    color: var(--muted);
+  }
+
   /* Badge shelf */
   .shelf-title { color: #fff; text-align: center; margin: 24px 0 12px; font-size: 18px; }
   .badges {
@@ -222,6 +230,7 @@
   .feedback { min-height: 24px; font-size: 18px; font-weight: bold; margin-top: 6px; }
   .feedback.good { color: var(--good); }
   .feedback.bad { color: var(--bad); }
+  .feedback.skip { color: #2563eb; }
 
   @keyframes pop {
     0% { transform: scale(1); }
@@ -334,6 +343,51 @@
   .sync-status.synced  { background: rgba(22,163,74,0.9); }
   .sync-status.syncing { background: rgba(245,158,11,0.9); }
   .sync-status.offline { background: rgba(220,38,38,0.9); }
+
+  /* Skip button */
+  .skip-btn {
+    width: 100%;
+    margin-top: 12px;
+    padding: 12px;
+    font-size: 16px;
+    background: rgba(255,255,255,0.16);
+    color: #fff;
+    border-radius: 14px;
+    box-shadow: none;
+  }
+  .skip-btn:active { transform: scale(0.97); }
+
+  /* Correct-answer micro-celebration (unobtrusive) */
+  .float-points {
+    position: fixed; transform: translate(-50%, -50%);
+    font-size: 26px; font-weight: bold; color: var(--gold);
+    text-shadow: 0 2px 0 rgba(0,0,0,0.18);
+    pointer-events: none; z-index: 60;
+    animation: floatUp 0.8s ease-out forwards;
+  }
+  @keyframes floatUp {
+    0%   { opacity: 0; transform: translate(-50%, -50%) scale(0.6); }
+    20%  { opacity: 1; }
+    100% { opacity: 0; transform: translate(-50%, -170%) scale(1.1); }
+  }
+  .spark {
+    position: fixed; transform: translate(-50%, -50%);
+    font-size: 18px; pointer-events: none; z-index: 60;
+    animation: sparkOut 0.7s ease-out forwards;
+  }
+  @keyframes sparkOut {
+    0%   { opacity: 0; transform: translate(-50%, -50%) scale(0.4); }
+    30%  { opacity: 1; }
+    100% { opacity: 0; transform: translate(calc(-50% + var(--dx)), calc(-50% + var(--dy))) scale(1); }
+  }
+
+  /* Recent-scores chips on the results screen */
+  .recent-scores { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; margin-top: 12px; }
+  .recent-scores .rs {
+    background: var(--accent-soft); color: var(--accent);
+    border-radius: 999px; padding: 5px 11px; font-size: 13px; font-weight: bold;
+  }
+  .recent-scores .rs.newest { background: var(--gold); color: #1f2937; }
 
   /* Confetti */
   #confetti { position: fixed; inset: 0; pointer-events: none; z-index: 50; overflow: hidden; }

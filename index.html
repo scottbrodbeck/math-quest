@@ -23,8 +23,17 @@
         <button class="pick" id="otherBtn">✏️ Other</button>
       </div>
       <input type="text" id="nameInput" maxlength="14" placeholder="Type your name" autocomplete="off" style="display:none; margin-top:12px;">
+
+      <label style="margin-top:16px;">Game length</label>
+      <div class="picker" id="lenPicker">
+        <button class="pick lpick" data-len="60">1 min</button>
+        <button class="pick lpick" data-len="120">2 min</button>
+        <button class="pick lpick" data-len="180">3 min</button>
+      </div>
+
       <button class="btn-big" id="startBtn" disabled>▶ Pick a player</button>
 
+      <div class="records-head" id="recordsHead">Your 1-min records</div>
       <div class="stats-row">
         <div class="stat"><div class="num" id="homeBest">0</div><div class="lbl">Best Score</div></div>
         <div class="stat"><div class="num" id="homeLevel">1</div><div class="lbl">Top Level</div></div>
@@ -70,6 +79,8 @@
       <button data-k="0">0</button>
       <button class="key-enter" data-k="enter">✓</button>
     </div>
+
+    <button class="skip-btn" id="skipBtn">🤔 Skip this one</button>
   </section>
 
   <!-- RESULTS -->
@@ -84,8 +95,17 @@
       <div class="stats-row">
         <div class="stat"><div class="num" id="finalSolved">0</div><div class="lbl">Solved</div></div>
         <div class="stat"><div class="num" id="finalStreak">0</div><div class="lbl">Best Streak</div></div>
-        <div class="stat"><div class="num" id="finalLevel">1</div><div class="lbl">Level</div></div>
+        <div class="stat"><div class="num" id="finalLevel">1</div><div class="lbl">Top Level</div></div>
       </div>
+      <p class="results-sub" id="finalBreakdown" style="margin:8px 0 0;"></p>
+
+      <div class="records-head" id="finalRecordsHead">Your 1-min records</div>
+      <div class="stats-row">
+        <div class="stat"><div class="num" id="finalBest">0</div><div class="lbl">Best Ever</div></div>
+        <div class="stat"><div class="num" id="finalAvg">0</div><div class="lbl">Average</div></div>
+        <div class="stat"><div class="num" id="finalGames">0</div><div class="lbl">Games</div></div>
+      </div>
+      <div class="recent-scores" id="finalRecent"></div>
 
       <div id="earnedWrap" style="display:none">
         <h3 class="results-title" style="font-size:18px;margin-top:18px;">✨ New Badges!</h3>

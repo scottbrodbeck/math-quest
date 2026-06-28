@@ -3,7 +3,8 @@
 
   // ---------- Config ----------
   const ROUND_SECONDS = 60;
-  const LEVEL_UP_EVERY = 5;          // correct answers per level
+  const LEVEL_UP_EVERY = 5;          // correct answers (at a level) to level up
+  const LEVEL_DOWN_AFTER = 3;        // misses (wrong or skip, at a level) to drop a level
   const BASE_POINTS = 10;
   const SPEED_BONUS_MAX = 10;        // bonus for answering quickly
   const SPEED_WINDOW = 5;            // seconds over which speed bonus decays
@@ -59,9 +60,15 @@
     try { localStorage.setItem(SKEY, JSON.stringify(s)); } catch (e) {}
   }
   let store = loadStore();
-  if (!store.players) store.players = {};      // name -> {best, topLevel, badges:[]}
+  if (!store.players) store.players = {};      // name -> {badges:[], history:[ {..., len} ]}
   if (!store.recent) store.recent = [];         // array of names, most recent first
   if (typeof store.muted !== "boolean") store.muted = false;
+  if (typeof store.lastLen !== "number") store.lastLen = 60;
+
+  // Game length (seconds). Each length keeps its own scores/history; badges are shared.
+  const LENGTHS = [60, 120, 180];
+  let selectedLen = store.lastLen || 60;
+  function lenLabel(len) { return (len / 60) + "-min"; }
 
   // Derive games / scoreSum / best / topLevel from the history (the source of truth). This makes
   // cross-device merges idempotent — union the history, then recompute.
@@ -88,9 +95,27 @@
     // timestamp so the same game dedupes identically on every device.
     pd.history.forEach(h => {
       if (!h.id) h.id = (h.ts != null ? "ts-" + h.ts : "x-" + Math.floor(Math.random() * 1e9));
+      if (typeof h.len !== "number") h.len = 60;   // legacy games were all 1-minute
     });
     recompute(pd);
     return pd;
+  }
+
+  // Per-length stats derived from the flat history (each game tagged with .len; default 60).
+  function lengthStats(pd, len) {
+    const items = (pd.history || []).filter(h => (h.len || 60) === len);
+    const sorted = items.slice().sort((a, b) => (b.ts || 0) - (a.ts || 0));
+    let sum = 0, best = 0, top = 1;
+    items.forEach(h => {
+      sum += h.score || 0;
+      if ((h.score || 0) > best) best = h.score;
+      if ((h.level || 1) > top) top = h.level;
+    });
+    return {
+      games: items.length, best: best, topLevel: top, history: sorted,
+      last: sorted.length ? sorted[0].score : 0,
+      average: items.length ? Math.round(sum / items.length) : 0,
+    };
   }
   function playerData(name) {
     if (!store.players[name]) store.players[name] = { best: 0, topLevel: 1, badges: [], games: 0, scoreSum: 0, history: [] };
@@ -145,7 +170,7 @@
 
   function cloudPushGame(name, entry) {
     return cloudFetch("players/" + encodeURIComponent(name) + "/history/" + encodeURIComponent(entry.id),
-      { method: "PUT", body: JSON.stringify({ score: entry.score, level: entry.level, solved: entry.solved, ts: entry.ts }) });
+      { method: "PUT", body: JSON.stringify({ score: entry.score, level: entry.level, solved: entry.solved, ts: entry.ts, len: entry.len || 60 }) });
   }
   function cloudPushBadge(name, badgeId) {
     return cloudFetch("players/" + encodeURIComponent(name) + "/badges/" + encodeURIComponent(badgeId),
@@ -216,6 +241,7 @@
     correct: () => { tone(660, 0.12, "triangle", 0); tone(990, 0.14, "triangle", 0.1); },
     wrong:   () => { tone(180, 0.25, "sawtooth", 0, 0.15); },
     levelup: () => { [523,659,784,1047].forEach((f,i) => tone(f, 0.16, "triangle", i*0.09)); },
+    leveldown: () => { [440,330,262].forEach((f,i) => tone(f, 0.14, "sine", i*0.08)); },
     newbest: () => { [659,784,988,1319].forEach((f,i) => tone(f, 0.2, "triangle", i*0.12)); },
   };
 
@@ -226,7 +252,8 @@
   // Returns {text, answer} scaled by level.
   function makeProblem(level) {
     let ops;
-    if (level <= 2) ops = ["add", "sub"];
+    if (level <= 1) ops = ["sub"];                 // initial level: single-digit subtraction only
+    else if (level <= 2) ops = ["add", "sub"];
     else if (level <= 4) ops = ["add", "sub", "mulEasy"];
     else ops = ["add", "sub", "mul"];
 
@@ -238,7 +265,7 @@
       a = rint(1, cap); b = rint(1, Math.max(1, cap - a));
       text = a + " + " + b; answer = a + b;
     } else if (op === "sub") {
-      const cap = level <= 4 ? 20 : 100;
+      const cap = level <= 1 ? 9 : (level <= 4 ? 20 : 100);   // L1: single digit − single digit
       a = rint(1, cap); b = rint(0, a);           // keep answer >= 0
       text = a + " − " + b; answer = a - b;
     } else if (op === "mulEasy") {
@@ -273,12 +300,18 @@
       bestStreak: 0,
       startLevel: startLevel,
       level: startLevel,
-      timeLeft: ROUND_SECONDS,
+      maxLevel: startLevel,      // highest level reached this round (for badges + records)
+      upCount: 0,                // correct answers since the last level change
+      downCount: 0,              // misses since the last level change
+      roundSeconds: selectedLen,
+      timeLeft: selectedLen,
       current: null,
       input: "",
       askedAt: 0,
       locked: false,
       gotSpeedDemon: false,
+      wrong: 0,
+      skips: 0,
       startMs: nowMs(),
     };
     show("game");
@@ -291,10 +324,10 @@
   function nowMs() { return (typeof performance !== "undefined" && performance.now) ? performance.now() : Date.now(); }
 
   function tick() {
-    g.timeLeft = Math.max(0, ROUND_SECONDS - (nowMs() - g.startMs) / 1000);
+    g.timeLeft = Math.max(0, g.roundSeconds - (nowMs() - g.startMs) / 1000);
     const secs = Math.ceil(g.timeLeft);
     $("hudTime").textContent = secs;
-    $("timerFill").style.width = (g.timeLeft / ROUND_SECONDS * 100) + "%";
+    $("timerFill").style.width = (g.timeLeft / g.roundSeconds * 100) + "%";
     $("hudTimeBox").classList.toggle("warn", secs <= 10);
     if (g.timeLeft <= 0) endGame();
   }
@@ -355,26 +388,57 @@
       $("feedback").textContent = "+" + gained + (combo > 1 ? "  (×" + combo + " combo!)" : "");
       $("feedback").className = "feedback good";
       showCombo(g.streak, combo);
+      celebrateCorrect(gained);
 
-      // Level up? (counts upward from this player's starting level)
-      const newLevel = g.startLevel + Math.floor(g.correct / LEVEL_UP_EVERY);
-      if (newLevel > g.level) { g.level = newLevel; levelUp(); }
+      // Level up after enough correct answers at this level.
+      g.upCount++;
+      if (g.upCount >= LEVEL_UP_EVERY) {
+        g.level++; g.upCount = 0; g.downCount = 0;
+        g.maxLevel = Math.max(g.maxLevel, g.level);
+        levelUp();
+      }
 
       updateHud();
       setTimeout(() => { card.classList.remove("correct"); if (g.timeLeft > 0) nextProblem(); }, 420);
     } else {
       g.locked = true;
       g.streak = 0;
+      g.wrong++;
       sfx.wrong();
       card.classList.remove("correct");
       void card.offsetWidth;
       card.classList.add("wrong");
       $("feedback").textContent = "The answer was " + g.current.answer;
       $("feedback").className = "feedback bad";
+      registerMiss();
       updateHud();
       // Show the correct answer briefly, then move on to the next question.
       setTimeout(() => { card.classList.remove("wrong"); if (g.timeLeft > 0) nextProblem(); }, 1400);
     }
+  }
+
+  // A miss is a wrong answer OR a skip. Too many at a level drops the difficulty.
+  function registerMiss() {
+    g.downCount++;
+    if (g.downCount >= LEVEL_DOWN_AFTER && g.level > 1) {
+      g.level--; g.upCount = 0; g.downCount = 0;
+      levelDown();
+    }
+  }
+
+  function skipQuestion() {
+    if (!g || g.locked) return;
+    g.locked = true;
+    g.streak = 0;
+    g.skips++;
+    sfx.leveldown();
+    const card = $("problemCard");
+    card.classList.remove("correct", "wrong");
+    $("feedback").textContent = "Skipped — the answer was " + g.current.answer;
+    $("feedback").className = "feedback skip";
+    registerMiss();
+    updateHud();
+    setTimeout(() => { if (g.timeLeft > 0) nextProblem(); }, 1400);
   }
 
   function comboMultiplier(streak) {
@@ -405,15 +469,52 @@
     confettiBurst(28);
   }
 
+  function levelDown() {
+    sfx.leveldown();
+    const el = $("comboFlash");
+    el.textContent = "↘️ Easier ones — Level " + g.level;
+    el.classList.remove("show"); void el.offsetWidth; el.classList.add("show");
+  }
+
+  // Small, quick celebration on a correct answer: a floating "+points" and a few sparkles
+  // near the answer box. (Big confetti stays reserved for level-ups and new bests.)
+  function celebrateCorrect(gained) {
+    const box = $("answerBox");
+    if (!box || !box.getBoundingClientRect) return;
+    const r = box.getBoundingClientRect();
+    const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+
+    const fp = document.createElement("div");
+    fp.className = "float-points";
+    fp.textContent = "+" + gained;
+    fp.style.left = cx + "px"; fp.style.top = cy + "px";
+    document.body.appendChild(fp);
+    setTimeout(() => fp.remove(), 800);
+
+    const marks = ["✨", "⭐", "💫"];
+    for (let i = 0; i < 5; i++) {
+      const s = document.createElement("div");
+      s.className = "spark";
+      s.textContent = pick(marks);
+      const ang = (Math.PI * 2 * i) / 5 + Math.random();
+      const dist = 30 + Math.random() * 28;
+      s.style.left = cx + "px"; s.style.top = cy + "px";
+      s.style.setProperty("--dx", (Math.cos(ang) * dist) + "px");
+      s.style.setProperty("--dy", (Math.sin(ang) * dist - 18) + "px");
+      document.body.appendChild(s);
+      setTimeout(() => s.remove(), 700);
+    }
+  }
+
   // ---------- End of round ----------
   function endGame() {
     if (tickHandle) { clearInterval(tickHandle); tickHandle = null; }
     if (!g) return;
 
     const pd = playerData(g.name);
-    const isNewBest = g.score > pd.best;
-    if (isNewBest) pd.best = g.score;
-    if (g.level > pd.topLevel) pd.topLevel = g.level;
+    const lenNow = g.roundSeconds || 60;
+    // "Best" is per-length: compare against the best for THIS length only.
+    const isNewBest = g.correct >= 1 && g.score > lengthStats(pd, lenNow).best;
 
     // Award badges
     const newly = [];
@@ -423,15 +524,15 @@
     award("first");
     if (g.bestStreak >= 10) award("fire");
     if (g.gotSpeedDemon) award("speed");
-    if (g.level >= 3) award("lvl3");
-    if (g.level >= 5) award("master");
+    if (g.maxLevel >= 3) award("lvl3");
+    if (g.maxLevel >= 5) award("master");
     if (g.score >= 500) award("high");
     if (g.correct >= 25) award("century");
 
     // Record the round in history — only count real rounds (solved at least one problem).
     let recordedEntry = null;
     if (g.correct >= 1) {
-      recordedEntry = { id: Date.now() + "-" + Math.floor(Math.random() * 1e6), score: g.score, level: g.level, solved: g.correct, ts: Date.now() };
+      recordedEntry = { id: Date.now() + "-" + Math.floor(Math.random() * 1e6), score: g.score, level: g.maxLevel, solved: g.correct, ts: Date.now(), len: lenNow };
       pd.history.unshift(recordedEntry);
       pd.history = pd.history.slice(0, 500);
       recompute(pd);
@@ -450,12 +551,34 @@
     }
 
     // Render results
-    $("resultsName").textContent = g.name + ", great job!";
+    $("resultsName").textContent = g.name + " · " + lenLabel(lenNow) + " game";
     $("finalScore").textContent = g.score;
     $("finalSolved").textContent = g.correct;
     $("finalStreak").textContent = g.bestStreak;
-    $("finalLevel").textContent = g.level;
+    $("finalLevel").textContent = g.maxLevel;
 
+    // solved / skipped / wrong breakdown
+    const parts = [g.correct + " solved"];
+    if (g.skips) parts.push(g.skips + " skipped");
+    if (g.wrong) parts.push(g.wrong + " wrong");
+    $("finalBreakdown").textContent = parts.join("  ·  ");
+
+    // per-length records (includes the round just recorded above)
+    const st = lengthStats(pd, lenNow);
+    $("finalRecordsHead").textContent = "Your " + lenLabel(lenNow) + " records";
+    $("finalBest").textContent = st.best;
+    $("finalAvg").textContent = st.average;
+    $("finalGames").textContent = st.games;
+    const recentEl = $("finalRecent");
+    recentEl.innerHTML = "";
+    st.history.slice(0, 6).forEach((h, i) => {
+      const chip = document.createElement("div");
+      chip.className = "rs" + (i === 0 ? " newest" : "");
+      chip.textContent = h.score;
+      recentEl.appendChild(chip);
+    });
+
+    $("newBest").textContent = "🎉 NEW " + lenLabel(lenNow).toUpperCase() + " BEST! 🎉";
     $("newBest").style.display = isNewBest ? "block" : "none";
 
     const earnedWrap = $("earnedWrap");
@@ -484,7 +607,20 @@
   function currentName() { return selectedName ? selectedName.trim() : ""; }
 
   function clearPicks() {
-    Array.prototype.forEach.call(document.querySelectorAll(".pick"), b => b.classList.remove("selected"));
+    Array.prototype.forEach.call(document.querySelectorAll("#picker .pick"), b => b.classList.remove("selected"));
+  }
+
+  function markLen() {
+    Array.prototype.forEach.call(document.querySelectorAll("#lenPicker .lpick"), b => {
+      b.classList.toggle("selected", Number(b.getAttribute("data-len")) === selectedLen);
+    });
+  }
+  function selectLength(len) {
+    selectedLen = len;
+    store.lastLen = len;
+    saveStore(store);
+    markLen();
+    refreshHomeStats();
   }
 
   function selectPlayer(name, btn) {
@@ -508,13 +644,16 @@
     const name = currentName();
     const pd = name && store.players[name]
       ? normalize(store.players[name])
-      : { best: 0, topLevel: 1, badges: [], games: 0, scoreSum: 0, history: [] };
-    $("homeBest").textContent = pd.best;
-    $("homeLevel").textContent = pd.topLevel;
-    $("homeBadges").textContent = pd.badges.length;
-    $("homeGames").textContent = pd.games;
-    $("homeLast").textContent = pd.history.length ? pd.history[0].score : 0;
-    $("homeAvg").textContent = pd.games ? Math.round(pd.scoreSum / pd.games) : 0;
+      : { badges: [], history: [] };
+    const st = lengthStats(pd, selectedLen);   // scores/history for the selected length
+    $("homeBest").textContent = st.best;
+    $("homeLevel").textContent = st.topLevel;
+    $("homeBadges").textContent = (pd.badges || []).length;   // badges are shared across lengths
+    $("homeGames").textContent = st.games;
+    $("homeLast").textContent = st.last;
+    $("homeAvg").textContent = st.average;
+    $("recordsHead").textContent = name ? ("Your " + lenLabel(selectedLen) + " records") : ("Pick a player · " + lenLabel(selectedLen));
+    markLen();
 
     const startBtn = $("startBtn");
     if (name) { startBtn.disabled = false; startBtn.textContent = "▶ Start, " + name + "!"; }
@@ -531,16 +670,16 @@
       shelf.appendChild(div);
     });
 
-    // recent games list for the selected player
+    // recent games list for the selected player + length
     const list = $("historyList");
     list.innerHTML = "";
-    if (!pd.history.length) {
+    if (!st.history.length) {
       const empty = document.createElement("div");
       empty.className = "hist-empty";
-      empty.textContent = name ? "No games yet — play a round!" : "Pick a player to see their games.";
+      empty.textContent = name ? ("No " + lenLabel(selectedLen) + " games yet — play a round!") : "Pick a player to see their games.";
       list.appendChild(empty);
     } else {
-      pd.history.forEach(h => {
+      st.history.forEach(h => {
         const when = new Date(h.ts).toLocaleDateString(undefined, { month: "short", day: "numeric" });
         const row = document.createElement("div");
         row.className = "hist-row";
@@ -602,16 +741,23 @@
   });
   $("nameInput").addEventListener("keydown", e => { if (e.key === "Enter") startGame(); });
 
+  $("lenPicker").addEventListener("click", e => {
+    const btn = e.target.closest("button");
+    if (btn) selectLength(Number(btn.getAttribute("data-len")));
+  });
+
   $("pad").addEventListener("click", e => {
     const btn = e.target.closest("button");
     if (btn) pressKey(btn.getAttribute("data-k"));
   });
+  $("skipBtn").addEventListener("click", skipQuestion);
 
   document.addEventListener("keydown", e => {
     if (!screens.game.classList.contains("active")) return;
     if (e.key >= "0" && e.key <= "9") { pressKey(e.key); e.preventDefault(); }
     else if (e.key === "Backspace") { pressKey("clear"); e.preventDefault(); }
     else if (e.key === "Enter") { pressKey("enter"); e.preventDefault(); }
+    else if (e.key === "s" || e.key === "S") { skipQuestion(); e.preventDefault(); }
   });
 
   $("muteBtn").addEventListener("click", () => {
