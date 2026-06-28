@@ -429,7 +429,7 @@
     margin-top: 28px;
     /* The bottom gap lives on the footer's OWN box — a flex container drops its
        padding-bottom from the scroll area, so body padding-bottom can't be relied on. */
-    padding-bottom: 48px;
+    padding-bottom: 24px;
   }
 
   /* Confetti */
