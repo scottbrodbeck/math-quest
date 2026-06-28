@@ -10,8 +10,8 @@
   const SPEED_WINDOW = 5;            // seconds over which speed bonus decays
   const SPEED_DEMON_SEC = 2;
 
-  // Per-kid starting level (by grade). Everyone else starts at 1.
-  const STARTING_LEVEL = { Evelyn: 3, JD: 1 };
+  // Starting level per kid. Both start at level 1; the adaptive system adjusts from there.
+  const STARTING_LEVEL = { Evelyn: 1, JD: 1 };
   function startingLevelFor(name) { return STARTING_LEVEL[name] || 1; }
 
   const BADGES = [
