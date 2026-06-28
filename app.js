@@ -212,7 +212,7 @@
 
   // ---------- Elements ----------
   const $ = id => document.getElementById(id);
-  const screens = { home: $("homeScreen"), game: $("gameScreen"), results: $("resultsScreen") };
+  const screens = { home: $("homeScreen"), game: $("gameScreen"), results: $("resultsScreen"), practice: $("practiceScreen") };
   function show(which) {
     Object.values(screens).forEach(s => s.classList.remove("active"));
     screens[which].classList.add("active");
@@ -278,6 +278,29 @@
     return { text: text, answer: answer };
   }
 
+  // A simple, kid-friendly hint that uses the actual numbers, for the end-of-round review.
+  function hintFor(text, answer) {
+    const m = text.match(/^(\d+)\s*([+−×x*\-])\s*(\d+)$/);
+    if (!m) return "";
+    const a = +m[1], op = m[2], b = +m[3];
+    if (op === "+") {
+      const big = Math.max(a, b), small = Math.min(a, b);
+      if (big < 10 && big + small > 10) {
+        const need = 10 - big;
+        return "Make 10 first: " + big + " + " + need + " = 10, then " + (small - need) + " more = " + answer + ".";
+      }
+      return "Start at the bigger number " + big + " and count up " + small + " → " + answer + ".";
+    }
+    if (op === "−" || op === "-") {
+      return "Count up from " + b + " to " + a + " — that's " + answer + " more.";
+    }
+    // multiplication
+    if (a === 10 || b === 10) { const o = (a === 10 ? b : a); return "×10 is easy — put a 0 after " + o + " → " + answer + "."; }
+    if (a === 5 || b === 5)   { return "Count by 5s (5, 10, 15…). " + a + " × " + b + " = " + answer + " — ×5 always ends in 0 or 5."; }
+    if (a === 2 || b === 2)   { const o = (a === 2 ? b : a); return "×2 means double it: " + o + " + " + o + " = " + answer + "."; }
+    return a + " × " + b + " means " + a + " added " + b + " times (count by " + a + "s) = " + answer + ".";
+  }
+
   // ---------- Game state ----------
   let g = null;
   let tickHandle = null;
@@ -312,6 +335,7 @@
       gotSpeedDemon: false,
       wrong: 0,
       skips: 0,
+      misses: [],                // problems gotten wrong or skipped (for end-of-round review)
       startMs: nowMs(),
     };
     show("game");
@@ -404,6 +428,7 @@
       g.locked = true;
       g.streak = 0;
       g.wrong++;
+      g.misses.push({ text: g.current.text, answer: g.current.answer, kind: "wrong" });
       sfx.wrong();
       card.classList.remove("correct");
       void card.offsetWidth;
@@ -431,6 +456,7 @@
     g.locked = true;
     g.streak = 0;
     g.skips++;
+    g.misses.push({ text: g.current.text, answer: g.current.answer, kind: "skip" });
     sfx.leveldown();
     const card = $("problemCard");
     card.classList.remove("correct", "wrong");
@@ -578,6 +604,25 @@
       recentEl.appendChild(chip);
     });
 
+    // Review missed problems (wrong or skipped) with a simple hint for each.
+    const reviewList = $("reviewList");
+    reviewList.innerHTML = "";
+    const seen = {};
+    const toReview = g.misses.filter(mi => { if (seen[mi.text]) return false; seen[mi.text] = 1; return true; }).slice(0, 6);
+    if (toReview.length) {
+      $("reviewWrap").style.display = "block";
+      toReview.forEach(mi => {
+        const div = document.createElement("div");
+        div.className = "review-item";
+        div.innerHTML =
+          '<div class="rev-q">' + mi.text + ' = ' + mi.answer + '</div>' +
+          '<div class="rev-hint">' + hintFor(mi.text, mi.answer) + '</div>';
+        reviewList.appendChild(div);
+      });
+    } else {
+      $("reviewWrap").style.display = "none";
+    }
+
     $("newBest").textContent = "🎉 NEW " + lenLabel(lenNow).toUpperCase() + " BEST! 🎉";
     $("newBest").style.display = isNewBest ? "block" : "none";
 
@@ -713,6 +758,47 @@
   // ---------- Mute ----------
   function refreshMute() { $("muteBtn").textContent = store.muted ? "🔇" : "🔊"; }
 
+  // ---------- Practice tables ----------
+  let practiceOp = "mul", practiceNum = 2, practiceHide = false;
+
+  function practiceFacts(op, n) {
+    const facts = [];
+    if (op === "add") { for (let k = 1; k <= 12; k++) facts.push({ text: n + " + " + k, answer: n + k }); }
+    else if (op === "sub") { for (let k = 0; k <= n; k++) facts.push({ text: n + " − " + k, answer: n - k }); }
+    else { for (let k = 1; k <= 12; k++) facts.push({ text: n + " × " + k, answer: n * k }); }
+    return facts;
+  }
+
+  function buildNumPicker() {
+    const wrap = $("numPicker");
+    wrap.innerHTML = "";
+    for (let i = 1; i <= 12; i++) {
+      const b = document.createElement("button");
+      b.className = "npick";
+      b.setAttribute("data-num", i);
+      b.textContent = i;
+      wrap.appendChild(b);
+    }
+  }
+
+  function renderPractice() {
+    Array.prototype.forEach.call(document.querySelectorAll("#opPicker .op"), b =>
+      b.classList.toggle("selected", b.getAttribute("data-op") === practiceOp));
+    Array.prototype.forEach.call(document.querySelectorAll("#numPicker .npick"), b =>
+      b.classList.toggle("selected", Number(b.getAttribute("data-num")) === practiceNum));
+    $("toggleAnsBtn").textContent = practiceHide ? "👁️ Show answers" : "🙈 Hide answers (quiz me)";
+
+    const wrap = $("practiceCards");
+    wrap.innerHTML = "";
+    practiceFacts(practiceOp, practiceNum).forEach(f => {
+      const card = document.createElement("div");
+      card.className = "fact" + (practiceHide ? " hidden" : "");
+      card.setAttribute("data-ans", f.answer);
+      card.innerHTML = f.text + ' <span class="fa">= ' + (practiceHide ? "?" : f.answer) + '</span>';
+      wrap.appendChild(card);
+    });
+  }
+
   // ---------- Wire up events ----------
   $("startBtn").addEventListener("click", startGame);
   $("playAgainBtn").addEventListener("click", startGame);
@@ -765,6 +851,25 @@
     saveStore(store);
     refreshMute();
     if (!store.muted) sfx.correct();
+  });
+
+  // Practice section navigation + controls
+  $("practiceBtn").addEventListener("click", () => { buildNumPicker(); renderPractice(); show("practice"); });
+  $("practiceBack").addEventListener("click", () => { refreshHome(); show("home"); });
+  $("opPicker").addEventListener("click", e => {
+    const b = e.target.closest("button"); if (!b) return;
+    practiceOp = b.getAttribute("data-op"); renderPractice();
+  });
+  $("numPicker").addEventListener("click", e => {
+    const b = e.target.closest("button"); if (!b) return;
+    practiceNum = Number(b.getAttribute("data-num")); renderPractice();
+  });
+  $("toggleAnsBtn").addEventListener("click", () => { practiceHide = !practiceHide; renderPractice(); });
+  $("practiceCards").addEventListener("click", e => {
+    const card = e.target.closest(".fact");
+    if (!card || !practiceHide) return;   // tap-to-reveal only matters in quiz mode
+    card.querySelector(".fa").textContent = "= " + card.getAttribute("data-ans");
+    card.classList.remove("hidden");
   });
 
   // ---------- Init ----------

@@ -389,6 +389,35 @@
   }
   .recent-scores .rs.newest { background: var(--gold); color: #1f2937; }
 
+  /* End-of-round review */
+  .review-list { display: flex; flex-direction: column; gap: 8px; text-align: left; }
+  .review-item { background: var(--accent-soft); border-radius: 14px; padding: 12px 14px; }
+  .review-item .rev-q { font-weight: bold; color: var(--ink); font-size: 17px; }
+  .review-item .rev-hint { color: var(--muted); font-size: 14px; margin-top: 4px; line-height: 1.35; }
+
+  /* Practice section */
+  .practice-link { width: 100%; margin-top: 16px; }
+  .practice-top { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; }
+  .practice-title { margin: 0; font-size: 22px; color: var(--ink); }
+  .num-picker { display: grid; grid-template-columns: repeat(6, 1fr); gap: 6px; }
+  .num-picker .npick {
+    padding: 12px 0; font-size: 16px; border-radius: 12px; font-family: inherit; font-weight: bold;
+    background: var(--accent-soft); color: var(--accent); border: none; cursor: pointer;
+    box-shadow: 0 3px 0 #c4b5fd;
+  }
+  .num-picker .npick:active { transform: scale(0.95); box-shadow: 0 1px 0 #c4b5fd; }
+  .num-picker .npick.selected { background: linear-gradient(135deg, #8b5cf6, #6d28d9); color: #fff; box-shadow: 0 3px 0 #4c1d95; }
+  .toggle-ans { width: 100%; margin-top: 16px; }
+  .facts { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin-top: 16px; }
+  .fact {
+    background: var(--panel); border: 2px solid var(--accent-soft); border-radius: 14px;
+    padding: 14px 8px; text-align: center; font-size: 20px; font-weight: bold; color: var(--ink);
+    cursor: pointer; user-select: none;
+  }
+  .fact .fa { color: var(--accent); }
+  .fact.hidden { border-style: dashed; }
+  .fact.hidden .fa { color: var(--muted); }
+
   /* Confetti */
   #confetti { position: fixed; inset: 0; pointer-events: none; z-index: 50; overflow: hidden; }
   .confetti-piece {
