@@ -10,8 +10,9 @@
   const SPEED_WINDOW = 5;            // seconds over which speed bonus decays
   const SPEED_DEMON_SEC = 2;
 
-  // Starting level per kid. Both start at level 1; the adaptive system adjusts from there.
-  const STARTING_LEVEL = { Evelyn: 1, JD: 1 };
+  // Starting level per kid (Nov 2026: Evelyn mid-3rd grade, JD mid-2nd). The adaptive
+  // system moves each kid up or down from here based on how they're doing.
+  const STARTING_LEVEL = { Evelyn: 2, JD: 1 };
   function startingLevelFor(name) { return STARTING_LEVEL[name] || 1; }
 
   const BADGES = [
@@ -250,32 +251,43 @@
   function pick(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
 
   // Returns {text, answer} scaled by level.
+  // Difficulty tiers (adaptive: 5 correct at a level → up one, 3 misses → down one).
+  //  L1   add & subtract within 20
+  //  L2   + easy multiplication (×2, ×5, ×10)
+  //  L3   two-digit ± one-digit, no regrouping (34 + 5, 47 − 6)    + easy ×
+  //  L4   two-digit ± two-digit, no regrouping (32 + 25, 58 − 23)  + ×2, ×3, ×4, ×5, ×10
+  //  L5+  two-digit with regrouping (47 + 28, 52 − 27)             + full tables 2–10
   function makeProblem(level) {
     let ops;
-    if (level <= 1) ops = ["sub"];                 // initial level: single-digit subtraction only
-    else if (level <= 2) ops = ["add", "sub"];
-    else if (level <= 4) ops = ["add", "sub", "mulEasy"];
-    else ops = ["add", "sub", "mul"];
+    if (level <= 1)      ops = ["add20", "sub20"];
+    else if (level <= 2) ops = ["add20", "sub20", "mulEasy"];
+    else if (level <= 3) ops = ["add21", "sub21", "mulEasy"];
+    else if (level <= 4) ops = ["add22", "sub22", "mulMid"];
+    else                 ops = ["addR", "subR", "mul"];
 
     const op = pick(ops);
-    let a, b, text, answer;
-
-    if (op === "add") {
-      const cap = level <= 4 ? 20 : 100;
-      a = rint(1, cap); b = rint(1, Math.max(1, cap - a));
-      text = a + " + " + b; answer = a + b;
-    } else if (op === "sub") {
-      const cap = level <= 1 ? 9 : (level <= 4 ? 20 : 100);   // L1: single digit − single digit
-      a = rint(1, cap); b = rint(0, a);           // keep answer >= 0
-      text = a + " − " + b; answer = a - b;
-    } else if (op === "mulEasy") {
-      a = pick([2, 5, 10]); b = rint(1, 10);
-      text = a + " × " + b; answer = a * b;
-    } else { // mul
-      a = rint(2, 10); b = rint(2, 10);
-      text = a + " × " + b; answer = a * b;
+    let a, b, sym;
+    switch (op) {
+      case "add20": a = rint(1, 19); b = rint(1, 20 - a); sym = "+"; break;
+      case "sub20": a = rint(2, 20); b = rint(0, a); sym = "−"; break;
+      case "add21": { const oa = rint(0, 8); a = rint(1, 8) * 10 + oa; b = rint(1, 9 - oa); sym = "+"; break; }
+      case "sub21": { const oa = rint(1, 9); a = rint(1, 9) * 10 + oa; b = rint(1, oa); sym = "−"; break; }
+      case "add22": {
+        const ta = rint(1, 8), tb = rint(1, 9 - ta), oa = rint(0, 9), ob = rint(0, 9 - oa);
+        a = ta * 10 + oa; b = tb * 10 + ob; sym = "+"; break;
+      }
+      case "sub22": {
+        const ta = rint(2, 9), tb = rint(1, ta - 1), oa = rint(0, 9), ob = rint(0, oa);
+        a = ta * 10 + oa; b = tb * 10 + ob; sym = "−"; break;
+      }
+      case "addR": a = rint(11, 89); b = rint(2, 99 - a); sym = "+"; break;
+      case "subR": a = rint(20, 99); b = rint(2, a - 1); sym = "−"; break;
+      case "mulEasy": a = pick([2, 5, 10]); b = rint(1, 10); sym = "×"; break;
+      case "mulMid":  a = pick([2, 3, 4, 5, 10]); b = rint(1, 10); sym = "×"; break;
+      default:        a = rint(2, 10); b = rint(2, 10); sym = "×";
     }
-    return { text: text, answer: answer };
+    const answer = sym === "+" ? a + b : sym === "−" ? a - b : a * b;
+    return { text: a + " " + sym + " " + b, answer: answer };
   }
 
   // A simple, kid-friendly hint that uses the actual numbers, for the end-of-round review.
@@ -283,22 +295,62 @@
     const m = text.match(/^(\d+)\s*([+−×x*\-])\s*(\d+)$/);
     if (!m) return "";
     const a = +m[1], op = m[2], b = +m[3];
+    const tens = n => Math.floor(n / 10) * 10, ones = n => n % 10;
+
     if (op === "+") {
       const big = Math.max(a, b), small = Math.min(a, b);
-      if (big < 10 && big + small > 10) {
+      if (small >= 10) {                           // two-digit + two-digit: tens, then ones
+        const t = tens(a) + tens(b), o = ones(a) + ones(b);
+        return "Add the tens, then the ones: " + tens(a) + " + " + tens(b) + " = " + t + ", " +
+               ones(a) + " + " + ones(b) + " = " + o + " → " + t + " + " + o + " = " + answer + ".";
+      }
+      if (big >= 10) {                             // two-digit + one-digit
+        if (ones(big) + small < 10) {
+          return "Just add the ones: " + ones(big) + " + " + small + " = " + (ones(big) + small) + ", so " + big + " + " + small + " = " + answer + ".";
+        }
+        const need = 10 - ones(big);
+        return "Get to the next ten: " + big + " + " + need + " = " + (big + need) + ", then " + (small - need) + " more = " + answer + ".";
+      }
+      if (big + small > 10) {                      // single digits that cross 10
         const need = 10 - big;
         return "Make 10 first: " + big + " + " + need + " = 10, then " + (small - need) + " more = " + answer + ".";
       }
       return "Start at the bigger number " + big + " and count up " + small + " → " + answer + ".";
     }
+
     if (op === "−" || op === "-") {
+      if (a >= 10 && b >= 10) {                    // two-digit − two-digit
+        if (ones(a) >= ones(b)) {
+          return "Subtract the tens, then the ones: " + tens(a) + " − " + tens(b) + " = " + (tens(a) - tens(b)) + ", " +
+                 ones(a) + " − " + ones(b) + " = " + (ones(a) - ones(b)) + " → " + answer + ".";
+        }
+        const nextTen = tens(b) + 10;              // regrouping: count up through the next ten
+        if (a === nextTen) return "Count up from " + b + " to " + a + " — that's " + answer + ".";
+        return "Count up from " + b + ": to " + nextTen + " is " + (nextTen - b) + ", then to " + a + " is " + (a - nextTen) +
+               ". " + (nextTen - b) + " + " + (a - nextTen) + " = " + answer + ".";
+      }
+      if (a >= 10) {                               // two-digit − one-digit
+        if (ones(a) >= b) {
+          return "Just subtract the ones: " + ones(a) + " − " + b + " = " + (ones(a) - b) + ", so " + a + " − " + b + " = " + answer + ".";
+        }
+        if (ones(a) > 0) {
+          return "Take away " + ones(a) + " to get " + tens(a) + ", then " + (b - ones(a)) + " more: " +
+                 tens(a) + " − " + (b - ones(a)) + " = " + answer + ".";
+        }
+      }
       return "Count up from " + b + " to " + a + " — that's " + answer + " more.";
     }
+
     // multiplication
-    if (a === 10 || b === 10) { const o = (a === 10 ? b : a); return "×10 is easy — put a 0 after " + o + " → " + answer + "."; }
-    if (a === 5 || b === 5)   { return "Count by 5s (5, 10, 15…). " + a + " × " + b + " = " + answer + " — ×5 always ends in 0 or 5."; }
-    if (a === 2 || b === 2)   { const o = (a === 2 ? b : a); return "×2 means double it: " + o + " + " + o + " = " + answer + "."; }
-    return a + " × " + b + " means " + a + " added " + b + " times (count by " + a + "s) = " + answer + ".";
+    const other = n => (a === n ? b : a);
+    if (a === 1 || b === 1)   return "Anything × 1 stays the same: " + a + " × " + b + " = " + answer + ".";
+    if (a === 10 || b === 10) return "×10 is easy — put a 0 after " + other(10) + " → " + answer + ".";
+    if (a === 5 || b === 5)   return "Count by 5s (5, 10, 15…). " + a + " × " + b + " = " + answer + " — ×5 always ends in 0 or 5.";
+    if (a === 2 || b === 2)   return "×2 means double it: " + other(2) + " + " + other(2) + " = " + answer + ".";
+    if (a === 4 || b === 4)   return "×4 is double, then double again: " + other(4) + " → " + (other(4) * 2) + " → " + answer + ".";
+    if (a === 9 || b === 9)   return "×9 trick: " + other(9) + " × 10 = " + (other(9) * 10) + ", then take away one " + other(9) + " → " + answer + ".";
+    if (a === 3 || b === 3)   return "×3 is double plus one more: " + other(3) + " + " + other(3) + " = " + (other(3) * 2) + ", + " + other(3) + " = " + answer + ".";
+    return a + " × " + b + " means " + b + " groups of " + a + " (count by " + a + "s) = " + answer + ".";
   }
 
   // ---------- Game state ----------
