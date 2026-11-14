@@ -1,6 +1,6 @@
-# Syncing Math Quest scores across devices
+# Syncing Learning Quest scores across devices
 
-By default, Math Quest saves scores **on the device** it's played on. If you want Evelyn's and JD's
+By default, Learning Quest saves scores **on the device** it's played on. If you want Evelyn's and JD's
 scores to follow them to any computer or tablet, you can connect the game to a free
 **Firebase Realtime Database**. This is optional — the game works fine without it.
 
@@ -25,15 +25,21 @@ It takes about 10 minutes, once. You'll create a free database, copy one web add
 Test mode stops working after a month, so set permanent rules. Open the **Rules** tab (top of the
 Realtime Database page), replace what's there with the rules below, and click **Publish**.
 
-**Recommended (tightened):** confines all access to the game's own branch and checks that scores are
-sane numbers, so nobody can dump junk into your database or wipe a player — without requiring the
-kids to log in:
+**Recommended (tightened):** confines all access to the game's own branch and checks that scores,
+settings, and tricky-fact progress are sane values, so nobody can dump junk into your database or wipe
+a player — without requiring the kids to log in:
 ```json
 {
   "rules": {
     "mathquest": {
       "$family": {
         ".read": true,
+        "settings": {
+          "$name": {
+            ".write": "newData.exists()",
+            ".validate": "newData.hasChildren(['startLevel','ops','ts']) && newData.child('startLevel').isNumber() && newData.child('ops').isString() && newData.child('ts').isNumber()"
+          }
+        },
         "players": {
           "$name": {
             "history": {
@@ -47,6 +53,12 @@ kids to log in:
                 ".write": "newData.exists()",
                 ".validate": "newData.isBoolean()"
               }
+            },
+            "cleared": {
+              "$fact": {
+                ".write": "newData.exists()",
+                ".validate": "newData.isNumber()"
+              }
             }
           }
         }
@@ -55,6 +67,14 @@ kids to log in:
   }
 }
 ```
+
+What each part holds: `history` = every finished round (including which facts were missed),
+`badges` = earned badges, `cleared` = tricky facts a kid has cleared in a drill, and `settings` =
+each kid's starting level and switched-on operations from the ⚙️ Grown-ups screen.
+
+> **Updating from an older version of these rules?** Just paste this whole block over the old one and
+> click **Publish**. Until you do, scores still sync — only Grown-ups settings and cleared tricky facts
+> stay on the device they were made on (the Grown-ups screen will say so).
 
 *(Simplest alternative, if you just want it working fast: `{ "rules": { ".read": true, ".write": true } }`.
 You can switch to the tightened rules above any time.)*

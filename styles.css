@@ -29,12 +29,13 @@
     flex-direction: column;
     align-items: center;
     justify-content: flex-start;
-    padding: 24px 16px 40px;
+    /* env() insets keep content clear of the notch / status bar / home indicator when installed as an app */
+    padding: calc(24px + env(safe-area-inset-top, 0px)) 16px 40px;
     overflow-x: hidden;
   }
 
   h1 {
-    margin: 8px 0 20px;
+    margin: 8px 0 14px;
     color: #fff;
     font-size: clamp(32px, 8vw, 52px);
     text-shadow: 0 4px 0 rgba(0,0,0,0.18);
@@ -326,7 +327,7 @@
 
   /* Mute toggle */
   .mute {
-    position: fixed; top: 14px; right: 14px;
+    position: fixed; top: calc(14px + env(safe-area-inset-top, 0px)); right: 14px;
     width: 46px; height: 46px; border-radius: 50%;
     font-size: 22px; background: rgba(255,255,255,0.2);
     box-shadow: none; padding: 0;
@@ -334,7 +335,7 @@
 
   /* Sync status pill */
   .sync-status {
-    position: fixed; top: 18px; left: 14px;
+    position: fixed; top: calc(18px + env(safe-area-inset-top, 0px)); left: 14px;
     padding: 7px 12px; border-radius: 999px;
     font-size: 13px; font-weight: bold; color: #fff;
     background: rgba(255,255,255,0.22);
@@ -429,8 +430,103 @@
     margin-top: 28px;
     /* The bottom gap lives on the footer's OWN box — a flex container drops its
        padding-bottom from the scroll area, so body padding-bottom can't be relied on. */
-    padding-bottom: 24px;
+    padding-bottom: calc(24px + env(safe-area-inset-bottom, 0px));
   }
+
+  /* On narrow screens the fixed sync pill + mute button would overlap the title; drop it below them */
+  @media (max-width: 480px) {
+    h1 { margin-top: 46px; }
+  }
+
+  /* Tabs */
+  .tabs {
+    display: flex; gap: 6px; width: 100%; max-width: 560px;
+    background: rgba(255,255,255,0.18); padding: 5px; border-radius: 18px; margin-bottom: 16px;
+  }
+  .tab {
+    flex: 1; padding: 11px 4px; font-size: 16px; border-radius: 14px;
+    background: transparent; color: #fff; box-shadow: none;
+  }
+  .tab.active { background: #fff; color: var(--accent); }
+
+  .card-gap { margin-top: 16px; }
+  .card-sub { color: var(--muted); font-size: 14px; margin: 6px 0 14px; line-height: 1.4; }
+  .op-picker { grid-template-columns: 1fr 1fr; }
+
+  /* Footer grown-ups link (small and quiet on purpose) */
+  .footer-link {
+    margin-top: 6px; padding: 6px 12px; font-size: 13px; font-weight: normal;
+    background: transparent; color: rgba(255,255,255,0.75); box-shadow: none;
+    text-decoration: underline; text-underline-offset: 3px;
+  }
+
+  /* Tricky facts */
+  .tricky-list { display: flex; flex-wrap: wrap; gap: 8px; margin: 14px 0 4px; }
+  .tricky-chip {
+    background: var(--accent-soft); color: var(--ink); border-radius: 12px;
+    padding: 8px 12px; font-size: 18px; font-weight: bold;
+  }
+  .tricky-empty { color: var(--muted); font-size: 15px; text-align: center; padding: 18px 8px; line-height: 1.4; }
+
+  /* Family records board */
+  .board { width: 100%; border-collapse: separate; border-spacing: 6px; table-layout: fixed; }
+  .board th { color: var(--muted); font-size: 14px; font-weight: bold; }
+  .board thead th { color: var(--ink); font-size: 16px; }
+  .board tbody th { text-align: left; width: 22%; }
+  .board td { background: var(--accent-soft); border-radius: 12px; padding: 10px 6px; text-align: center; }
+  .board td.none { color: var(--muted); }
+  .b-best { font-size: 26px; font-weight: bold; color: var(--accent); }
+  .b-sub { font-size: 12px; color: var(--muted); margin-top: 2px; }
+
+  /* Progress chart */
+  .chart-wrap { margin-top: 14px; }
+  .legend { display: flex; gap: 16px; justify-content: center; font-size: 14px; color: var(--ink); margin-bottom: 6px; }
+  .legend .lg { display: inline-flex; align-items: center; gap: 6px; }
+  .legend i, .chart-tip i { display: inline-block; width: 10px; height: 10px; border-radius: 50%; }
+  .chart-box { position: relative; }
+  .chart { width: 100%; height: auto; display: block; touch-action: pan-y; overflow: visible; }
+  .chart .grid { stroke: #ececf1; stroke-width: 1; }
+  .chart .axis { fill: var(--muted); font-size: 12px; font-family: inherit; }
+  .chart .dlabel { fill: var(--ink); font-size: 13px; font-weight: bold; font-family: inherit; }
+  .chart .xhair { stroke: #c7c7d1; stroke-width: 1; stroke-dasharray: 3 3; }
+  .chart-tip {
+    display: none; position: absolute; top: -6px; pointer-events: none; z-index: 5;
+    background: #fff; border: 1px solid #e5e7eb; border-radius: 10px; padding: 8px 10px;
+    box-shadow: 0 6px 18px rgba(0,0,0,0.12); font-size: 13px; color: var(--ink); white-space: nowrap;
+  }
+  .chart-tip .tt-h { font-weight: bold; margin-bottom: 4px; }
+  .chart-tip .tt-r { display: flex; align-items: center; gap: 6px; }
+  .chart-tip .tt-r span { color: var(--muted); }
+  .chart-table { margin-top: 12px; color: var(--muted); font-size: 14px; }
+  .chart-table summary { cursor: pointer; }
+  .mini { width: 100%; border-collapse: collapse; margin-top: 8px; font-size: 14px; color: var(--ink); }
+  .mini th, .mini td { text-align: left; padding: 5px 6px; border-bottom: 1px solid #f0f0f3; }
+  .mini td span { color: var(--muted); font-size: 12px; }
+
+  /* Grown-ups settings */
+  .gate-q { font-size: 34px; font-weight: bold; text-align: center; color: var(--ink); margin: 6px 0 12px; }
+  .gate-input {
+    width: 100%; padding: 14px; font-size: 24px; text-align: center; font-family: inherit;
+    border: 3px solid var(--accent-soft); border-radius: 14px; outline: none;
+  }
+  .gate-input:focus { border-color: var(--accent); }
+  .gate-err { color: var(--bad); text-align: center; min-height: 20px; margin: 10px 0 0; font-weight: bold; }
+  .set-kid { border: 2px solid var(--accent-soft); border-radius: 16px; padding: 14px; margin-top: 12px; }
+  .set-name { font-size: 20px; font-weight: bold; color: var(--ink); margin-bottom: 8px; }
+  .set-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 8px; }
+  .set-lbl { color: var(--muted); font-weight: bold; font-size: 14px; }
+  .set-desc { color: var(--muted); font-size: 13px; margin-top: 4px; }
+  .stepper { display: flex; align-items: center; gap: 10px; }
+  .stepper button, .optog {
+    width: 44px; height: 44px; padding: 0; font-size: 22px; border-radius: 12px;
+    background: var(--accent-soft); color: var(--accent); box-shadow: 0 3px 0 #c4b5fd;
+  }
+  .stepper button:disabled { opacity: 0.35; }
+  .stepper .lvl { font-size: 24px; font-weight: bold; color: var(--accent); min-width: 22px; text-align: center; }
+  .op-toggles { display: flex; gap: 6px; }
+  .optog.on { background: linear-gradient(135deg, #8b5cf6, #6d28d9); color: #fff; box-shadow: 0 3px 0 #4c1d95; }
+  .settings-note { color: var(--muted); font-size: 13px; line-height: 1.4; min-height: 18px; margin: 14px 0 0; }
+  .settings-done { width: 100%; margin-top: 14px; }
 
   /* Confetti */
   #confetti { position: fixed; inset: 0; pointer-events: none; z-index: 50; overflow: hidden; }
@@ -441,4 +537,101 @@
   }
   @keyframes fall {
     to { transform: translateY(110vh) rotate(720deg); opacity: 1; }
+  }
+
+  /* ---------- Learning Quest: subject switch ---------- */
+  .subject-switch { display: flex; gap: 10px; width: 100%; max-width: 560px; margin: -4px 0 16px; }
+  .subj {
+    flex: 1; padding: 12px 6px; font-size: 18px; border-radius: 16px;
+    background: rgba(255,255,255,0.14); color: #fff; border: 2px solid rgba(255,255,255,0.45); box-shadow: none;
+  }
+  .subj.active { background: #fbbf24; color: #3b1d00; border-color: #fbbf24; box-shadow: 0 4px 0 #b45309; }
+  .mode-picker { grid-template-columns: 1fr 1fr; }
+  .mode-sub { display: block; font-size: 12px; font-weight: normal; opacity: 0.8; margin-top: 3px; }
+  #recordsModePicker { grid-template-columns: 1fr 1fr; margin-bottom: 4px; }
+
+  /* ---------- Spelling game ---------- */
+  .problem.spelling .question { font-size: clamp(30px, 9vw, 46px); letter-spacing: 1px; overflow-wrap: anywhere; }
+  .question.q-listen { font-size: clamp(24px, 7vw, 32px); color: var(--accent); }
+  .question .gap {
+    display: inline-block; min-width: 1.6em; padding: 0 6px; margin: 0 2px;
+    border-bottom: 5px solid var(--gold); color: var(--gold);
+  }
+  .question .gap.filled.ok { color: var(--good); border-color: var(--good); }
+  .question .gap.filled.fix { color: var(--good); border-color: var(--good); animation: pop 0.5s ease; }
+  .q-sentence {
+    margin: 10px auto 0; max-width: 440px; font-size: 18px; line-height: 1.4; color: var(--ink);
+    background: #fef9c3; border-radius: 12px; padding: 10px 14px;
+  }
+  .listen-btn {
+    margin: 12px auto 0; display: block; padding: 10px 18px; font-size: 16px; border-radius: 999px;
+    background: var(--accent-soft); color: var(--accent); box-shadow: 0 3px 0 #c4b5fd;
+  }
+  .listen-btn:disabled { opacity: 0.6; font-size: 13px; }
+  .problem.spelling .answer-box { width: 92%; max-width: 420px; font-size: clamp(28px, 8vw, 40px); letter-spacing: 3px; }
+  .answer-box .placeholder { font-size: 18px; letter-spacing: 0; color: #c4b5fd; font-weight: normal; }
+  .answer-box .pop { display: inline-block; animation: letterPop 0.22s ease; }
+  @keyframes letterPop { 0% { transform: scale(1.7) translateY(-6px); } 100% { transform: scale(1) translateY(0); } }
+  .feedback.spell { font-size: 15px; font-weight: normal; line-height: 1.4; color: var(--ink); margin-top: 10px; }
+  .feedback.spell.bad, .feedback.spell.skip { background: #fff7ed; border-radius: 12px; padding: 10px 12px; }
+  .sp-word { display: block; font-size: 30px; font-weight: bold; letter-spacing: 1px; color: var(--ink); margin-bottom: 4px; }
+  b.chunk { color: #db2777; background: #fce7f3; border-radius: 6px; padding: 0 2px; }
+
+  /* Letter keyboard */
+  .keyboard { margin-top: 16px; display: flex; flex-direction: column; gap: 7px; }
+  .kb-row { display: flex; gap: 5px; justify-content: center; }
+  .kb-row button {
+    flex: 0 1 46px; min-width: 0; padding: 14px 0; font-size: 22px; border-radius: 10px;
+    background: var(--panel); color: var(--ink); box-shadow: 0 3px 0 rgba(0,0,0,0.2);
+  }
+  .kb-row button:active { box-shadow: 0 1px 0 rgba(0,0,0,0.2); transform: translateY(2px); }
+  .kb-actions button { flex: 1 1 0; max-width: 200px; font-size: 20px; }
+  .keyboard .key-clear { background: #fca5a5; color: #7f1d1d; box-shadow: 0 3px 0 #ef4444; }
+  .keyboard .key-enter { background: #86efac; color: #14532d; box-shadow: 0 3px 0 #22c55e; }
+
+  /* Fix the Chunk options */
+  .chunk-opts { display: grid; gap: 12px; margin-top: 18px; }
+  .chunk-opt {
+    padding: 20px 4px; font-size: clamp(24px, 7vw, 32px); border-radius: 18px; letter-spacing: 1px;
+    background: var(--panel); color: var(--ink); box-shadow: 0 5px 0 rgba(0,0,0,0.22);
+  }
+  .chunk-opt:active { box-shadow: 0 1px 0 rgba(0,0,0,0.22); transform: translateY(3px); }
+  .chunk-opt.right { background: var(--good-soft); color: var(--good); box-shadow: 0 5px 0 var(--good); }
+  .chunk-opt.wrong { background: var(--bad-soft); color: var(--bad); box-shadow: 0 5px 0 var(--bad); text-decoration: line-through; }
+
+  /* Spelling review + tricky words */
+  .speakable { cursor: pointer; }
+  .rev-typed { display: inline-block; margin-left: 4px; color: var(--bad); }
+
+  /* Spelling rules (Practice tab) */
+  .rule-picker { display: flex; flex-wrap: wrap; gap: 8px; }
+  .rule-chip {
+    padding: 8px 12px; font-size: 14px; border-radius: 999px;
+    background: var(--accent-soft); color: var(--accent); box-shadow: 0 2px 0 #c4b5fd;
+  }
+  .rule-chip.selected { background: var(--accent); color: #fff; box-shadow: 0 2px 0 #4c1d95; }
+  .rule-card { margin-top: 14px; background: #fef9c3; border-radius: 16px; padding: 14px 16px; }
+  .rule-name { font-size: 20px; font-weight: bold; color: var(--ink); }
+  .rule-text { margin-top: 6px; font-size: 16px; line-height: 1.45; color: var(--ink); }
+  .rule-words { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
+  .rule-word {
+    padding: 6px 10px; font-size: 17px; border-radius: 10px; font-weight: bold;
+    background: #fff; color: var(--ink); box-shadow: 0 2px 0 rgba(0,0,0,0.12);
+  }
+  .rule-hint { margin-top: 8px; font-size: 13px; color: var(--muted); }
+  .btn-row-primary.alt { background: linear-gradient(135deg, #8b5cf6, #6d28d9); box-shadow: 0 5px 0 #4c1d95; }
+  .set-gap { margin-top: 14px; }
+
+  /* Phones: keep the whole spelling game (through the ✓ Check key) on one screen */
+  @media (max-width: 480px), (max-height: 760px) {
+    .problem.spelling { padding: 16px 14px; }
+    .problem.spelling .question.q-listen { font-size: 22px; }
+    .problem.spelling .q-sentence { margin-top: 8px; font-size: 16px; padding: 8px 12px; }
+    .problem.spelling .listen-btn { margin-top: 8px; padding: 7px 14px; font-size: 14px; }
+    .problem.spelling .answer-box { margin-top: 10px; min-height: 52px; }
+    .keyboard { margin-top: 10px; gap: 6px; }
+    .kb-row { gap: 4px; }
+    .kb-row button { padding: 12px 0; font-size: 19px; }
+    .chunk-opts { margin-top: 12px; }
+    .button-row { flex-wrap: wrap; }
   }

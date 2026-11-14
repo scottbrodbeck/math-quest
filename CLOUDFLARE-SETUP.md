@@ -1,4 +1,4 @@
-# Hosting Math Quest on Cloudflare Pages
+# Hosting Learning Quest on Cloudflare Pages
 
 This connects your GitHub repo (`scottbrodbeck/math-quest`) to **Cloudflare Pages** so the game is
 live on the web at a free `https://…pages.dev` address — and **auto-updates every time you
@@ -24,7 +24,7 @@ whatever is on GitHub, not what's only on your computer.
 3. Back in Cloudflare, select **`scottbrodbeck/math-quest`** → **Begin setup**.
 
 ## Step 4 — Build settings (important — keep these minimal)
-Math Quest is plain HTML/CSS/JS with **no build step**, so:
+Learning Quest is plain HTML/CSS/JS with **no build step**, so:
 - **Project name:** `math-quest` (this becomes your URL: `math-quest.pages.dev`). Pick another name
   if that one's taken.
 - **Production branch:** `main`

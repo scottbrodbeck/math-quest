@@ -2,18 +2,39 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
-<title>Math Quest 🚀</title>
-<link rel="stylesheet" href="styles.css?v=9">
-<script src="app.js?v=9" defer></script>
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>Learning Quest 🚀</title>
+<!-- Installable app: home-screen icon + full-screen launch on iPad/iPhone/Android -->
+<link rel="manifest" href="manifest.webmanifest?v=11">
+<meta name="theme-color" content="#4f46e5">
+<link rel="icon" type="image/png" href="icon-192.png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Learning Quest">
+<link rel="stylesheet" href="styles.css?v=11">
+<script src="spelling-words.js?v=11" defer></script>
+<script src="app.js?v=11" defer></script>
 </head>
 <body>
   <button class="mute" id="muteBtn" title="Sound on/off">🔊</button>
   <div class="sync-status local" id="syncStatus" title="Where scores are saved">💾 Local only</div>
 
-  <h1>🚀 Math Quest</h1>
+  <h1>🚀 Learning Quest</h1>
 
-  <!-- HOME -->
+  <nav class="tabs" id="tabs">
+    <button class="tab active" data-tab="home">🎮 Play</button>
+    <button class="tab" data-tab="practice">📚 Practice</button>
+    <button class="tab" data-tab="records">🏆 Records</button>
+  </nav>
+
+  <div class="subject-switch" id="subjectSwitch" role="group" aria-label="Subject">
+    <button class="subj active" data-subject="math">🔢 Math</button>
+    <button class="subj" data-subject="spell">🔤 Spelling</button>
+  </div>
+
+  <!-- PLAY (home) -->
   <section class="screen active" id="homeScreen">
     <div class="card">
       <label>Who's playing?</label>
@@ -29,6 +50,14 @@
         <button class="pick lpick" data-len="60">1 min</button>
         <button class="pick lpick" data-len="120">2 min</button>
         <button class="pick lpick" data-len="180">3 min</button>
+      </div>
+
+      <div id="spellModeWrap" style="display:none">
+        <label style="margin-top:16px;">Spelling game</label>
+        <div class="picker mode-picker" id="spellModePicker">
+          <button class="pick" data-mode="spell">✏️ Spell It<span class="mode-sub">Hear it, spell it</span></button>
+          <button class="pick" data-mode="chunk">🧩 Fix the Chunk<span class="mode-sub">Pick the right letters</span></button>
+        </div>
       </div>
 
       <button class="btn-big" id="startBtn" disabled>▶ Pick a player</button>
@@ -51,17 +80,15 @@
 
     <h2 class="shelf-title">📜 Recent Games</h2>
     <div class="history" id="historyList"></div>
-
-    <button class="btn-secondary practice-link" id="practiceBtn">📚 Practice Tables</button>
   </section>
 
-  <!-- GAME -->
+  <!-- GAME (also used for tricky-fact drills) -->
   <section class="screen" id="gameScreen">
     <div class="hud">
       <div class="box"><div class="num" id="hudScore">0</div><div class="lbl">Score</div></div>
       <div class="box"><div class="num" id="hudStreak">0</div><div class="lbl">Streak 🔥</div></div>
-      <div class="box"><div class="num" id="hudLevel">1</div><div class="lbl">Level</div></div>
-      <div class="box" id="hudTimeBox"><div class="num" id="hudTime">60</div><div class="lbl">Seconds</div></div>
+      <div class="box" id="hudLevelBox"><div class="num" id="hudLevel">1</div><div class="lbl">Level</div></div>
+      <div class="box" id="hudTimeBox"><div class="num" id="hudTime">60</div><div class="lbl" id="hudTimeLbl">Seconds</div></div>
     </div>
     <div class="timerbar"><div id="timerFill"></div></div>
 
@@ -69,6 +96,8 @@
 
     <div class="problem" id="problemCard">
       <div class="question" id="question">3 + 4</div>
+      <div class="q-sentence" id="qSentence" style="display:none"></div>
+      <button class="listen-btn" id="listenBtn" style="display:none">🔊 Hear it again</button>
       <div class="answer-box" id="answerBox">?</div>
       <div class="feedback" id="feedback"></div>
     </div>
@@ -81,36 +110,43 @@
       <button data-k="0">0</button>
       <button class="key-enter" data-k="enter">✓</button>
     </div>
+    <div class="keyboard" id="keyboard" style="display:none"></div>
+    <div class="chunk-opts" id="chunkOpts" style="display:none"></div>
 
     <button class="skip-btn" id="skipBtn">🤔 Skip this one</button>
+    <button class="skip-btn" id="endDrillBtn" style="display:none">⏹ Finish drill</button>
   </section>
 
   <!-- RESULTS -->
   <section class="screen" id="resultsScreen">
     <div class="card">
-      <h2 class="results-title">⏰ Time's Up!</h2>
+      <h2 class="results-title" id="resultsTitle">⏰ Time's Up!</h2>
       <p class="results-sub" id="resultsName">Great job!</p>
       <div class="newbest" id="newBest" style="display:none">🎉 NEW BEST SCORE! 🎉</div>
       <div class="bignum" id="finalScore">0</div>
-      <p class="results-sub">points</p>
+      <p class="results-sub" id="finalScoreLbl">points</p>
 
-      <div class="stats-row">
-        <div class="stat"><div class="num" id="finalSolved">0</div><div class="lbl">Solved</div></div>
-        <div class="stat"><div class="num" id="finalStreak">0</div><div class="lbl">Best Streak</div></div>
-        <div class="stat"><div class="num" id="finalLevel">1</div><div class="lbl">Top Level</div></div>
+      <div id="resultsStats">
+        <div class="stats-row">
+          <div class="stat"><div class="num" id="finalSolved">0</div><div class="lbl" id="finalSolvedLbl">Solved</div></div>
+          <div class="stat"><div class="num" id="finalStreak">0</div><div class="lbl">Best Streak</div></div>
+          <div class="stat"><div class="num" id="finalLevel">1</div><div class="lbl">Top Level</div></div>
+        </div>
+        <p class="results-sub" id="finalBreakdown" style="margin:8px 0 0;"></p>
       </div>
-      <p class="results-sub" id="finalBreakdown" style="margin:8px 0 0;"></p>
 
-      <div class="records-head" id="finalRecordsHead">Your 1-min records</div>
-      <div class="stats-row">
-        <div class="stat"><div class="num" id="finalBest">0</div><div class="lbl">Best Ever</div></div>
-        <div class="stat"><div class="num" id="finalAvg">0</div><div class="lbl">Average</div></div>
-        <div class="stat"><div class="num" id="finalGames">0</div><div class="lbl">Games</div></div>
+      <div id="resultsRecords">
+        <div class="records-head" id="finalRecordsHead">Your 1-min records</div>
+        <div class="stats-row">
+          <div class="stat"><div class="num" id="finalBest">0</div><div class="lbl">Best Ever</div></div>
+          <div class="stat"><div class="num" id="finalAvg">0</div><div class="lbl">Average</div></div>
+          <div class="stat"><div class="num" id="finalGames">0</div><div class="lbl">Games</div></div>
+        </div>
+        <div class="recent-scores" id="finalRecent"></div>
       </div>
-      <div class="recent-scores" id="finalRecent"></div>
 
       <div id="reviewWrap" style="display:none">
-        <h3 class="results-title" style="font-size:18px;margin-top:18px;">📝 Let's review</h3>
+        <h3 class="results-title" id="reviewTitle" style="font-size:18px;margin-top:18px;">📝 Let's review</h3>
         <div class="review-list" id="reviewList"></div>
       </div>
 
@@ -129,16 +165,33 @@
   <!-- PRACTICE -->
   <section class="screen" id="practiceScreen">
     <div class="card">
-      <div class="practice-top">
-        <button class="btn-secondary" id="practiceBack">← Back</button>
-        <h2 class="practice-title">📚 Practice</h2>
-      </div>
+      <h2 class="practice-title" id="trickyTitle">🎯 Tricky facts</h2>
+      <p class="card-sub" id="trickySub">Facts missed in recent rounds. Drill them until they stick!</p>
+      <div class="picker" id="trickyKids"></div>
+      <div class="tricky-list" id="trickyList"></div>
+      <button class="btn-big" id="drillBtn" style="display:none">▶ Drill these facts</button>
+    </div>
 
-      <label>Operation</label>
-      <div class="picker" id="opPicker">
+    <div class="card card-gap" id="spellRules" style="display:none">
+      <h2 class="practice-title">📖 Spelling rules</h2>
+      <p class="card-sub">Pick a rule, learn the trick, then practice 10 words that use it.</p>
+      <div class="rule-picker" id="rulePicker"></div>
+      <div class="rule-card" id="ruleCard"></div>
+      <div class="button-row">
+        <button class="btn-row-primary" id="ruleChunkBtn">🧩 Fix the Chunk</button>
+        <button class="btn-row-primary alt" id="ruleSpellBtn">✏️ Spell It</button>
+      </div>
+    </div>
+
+    <div class="card card-gap" id="mathTables">
+      <h2 class="practice-title">📚 Practice tables</h2>
+
+      <label style="margin-top:14px;">Operation</label>
+      <div class="picker op-picker" id="opPicker">
         <button class="pick op" data-op="add">➕ Add</button>
         <button class="pick op" data-op="sub">➖ Subtract</button>
         <button class="pick op" data-op="mul">✖️ Multiply</button>
+        <button class="pick op" data-op="div">➗ Divide</button>
       </div>
 
       <label style="margin-top:14px;">Focus number</label>
@@ -150,7 +203,62 @@
     </div>
   </section>
 
-  <footer class="app-footer">🧮 Math Quest · practice a little every day!</footer>
+  <!-- RECORDS -->
+  <section class="screen" id="recordsScreen">
+    <div class="card">
+      <h2 class="practice-title">🏆 Family records</h2>
+      <div id="recordsModeWrap" style="display:none">
+        <div class="picker" id="recordsModePicker">
+          <button class="pick" data-mode="spell">✏️ Spell It</button>
+          <button class="pick" data-mode="chunk">🧩 Fix the Chunk</button>
+        </div>
+      </div>
+      <p class="card-sub" id="boardSub">Best score for each game length.</p>
+      <table class="board" id="familyBoard"></table>
+    </div>
+
+    <div class="card card-gap">
+      <h2 class="practice-title">📈 Progress</h2>
+      <p class="card-sub">Score for every game. Tap or hover a point for details.</p>
+      <div class="picker" id="chartLenPicker">
+        <button class="pick" data-len="60">1 min</button>
+        <button class="pick" data-len="120">2 min</button>
+        <button class="pick" data-len="180">3 min</button>
+      </div>
+      <div class="chart-wrap" id="chartWrap"></div>
+      <details class="chart-table">
+        <summary>Show as a table</summary>
+        <div id="chartTable"></div>
+      </details>
+    </div>
+  </section>
+
+  <!-- GROWN-UPS SETTINGS -->
+  <section class="screen" id="settingsScreen">
+    <div class="card">
+      <h2 class="practice-title">⚙️ Grown-ups</h2>
+
+      <div id="gate">
+        <p class="card-sub">This area is for grown-ups. To continue, answer:</p>
+        <div class="gate-q" id="gateQ">14 × 6 = ?</div>
+        <input type="number" inputmode="numeric" id="gateInput" class="gate-input" autocomplete="off" aria-label="Answer">
+        <button class="btn-big" id="gateBtn">Unlock</button>
+        <p class="gate-err" id="gateErr" role="alert"></p>
+      </div>
+
+      <div id="settingsPanel" style="display:none">
+        <p class="card-sub">Changes save right away. Each round starts at the level you pick, then moves up or down as your kid plays. A math level only mixes in the operations it covers (÷ starts at level 5); switch one off to leave it out completely. Spelling levels add new rules as they go up.</p>
+        <div id="settingsKids"></div>
+        <p class="settings-note" id="settingsNote"></p>
+        <button class="btn-secondary settings-done" id="settingsDone">✓ Done</button>
+      </div>
+    </div>
+  </section>
+
+  <footer class="app-footer">
+    <div>🚀 Learning Quest · practice a little every day!</div>
+    <button class="footer-link" id="footerSettings">⚙️ Grown-ups</button>
+  </footer>
 
   <div id="confetti"></div>
 
