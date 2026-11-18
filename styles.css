@@ -635,3 +635,7 @@
     .chunk-opts { margin-top: 12px; }
     .button-row { flex-wrap: wrap; }
   }
+
+  /* Quit a round (two taps) */
+  .quit-btn { background: transparent; color: rgba(255,255,255,0.8); font-size: 14px; padding: 8px; margin-top: 6px; }
+  .quit-btn.confirm { background: #fee2e2; color: #991b1b; font-weight: bold; }

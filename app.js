@@ -14,6 +14,7 @@
   // override these in ⚙️ Grown-ups. The adaptive system moves each kid up or down from here.
   const STARTING_LEVEL = { Evelyn: 2, JD: 1 };
   const KIDS = ["Evelyn", "JD"];
+  const HIDDEN_PLAYERS = ["test"];   // test accounts: never shown as a player button
   const ALL_OPS = ["add", "sub", "mul", "div"];
   const OP_LABEL = { add: "+", sub: "−", mul: "×", div: "÷" };
   const MAX_START_LEVEL = 5;
@@ -128,6 +129,7 @@
   if (!store.settings || typeof store.settings !== "object") store.settings = {};   // name -> {startLevel, ops, spellLevel, ts}
   if (store.subject !== "spell") store.subject = "math";        // which subject the tabs show
   if (store.spellMode !== "chunk") store.spellMode = "spell";   // Spell It or Fix the Chunk
+  if (!store.spellSeen || typeof store.spellSeen !== "object") store.spellSeen = {};   // name -> {word: last-asked ts} (this device)
 
   // A kid's settings: grown-up overrides if set, otherwise the defaults above.
   function settingsFor(name) {
@@ -544,11 +546,44 @@
     if (track === "chunk") { q.options = shuffle([w.chunk].concat(w.alts.slice(0, 2))); q.answer = w.chunk; }
     return q;
   }
-  function makeSpellQuestion(level, track, used) {
-    const ids = SPELL_LEVELS[Math.min(SPELL_MAX_LEVEL, Math.max(1, level))] || SPELL_LEVELS[1];
-    const all = [].concat.apply([], ids.map(id => UNIT_BY_ID[id] ? UNIT_BY_ID[id].words : []));
-    const fresh = all.filter(w => !used[w.word]);
-    return spellQ(pick(fresh.length ? fresh : all), track);
+  // Word picking. Goals: every rule at the level gets equal turns (not weighted by how many words
+  // it has), the same rule never comes twice in a row, and each kid sees the words they've seen
+  // least recently, so rounds don't keep serving the same handful of words.
+  function seenMap(name) { return (name && store.spellSeen[name]) || {}; }
+  function markSeen(name, word) {
+    if (!name) return;
+    (store.spellSeen[name] = store.spellSeen[name] || {})[word] = Date.now();
+    saveStore(store);
+  }
+  // Random pick from the least-recently-seen third of the candidates (never-seen words first).
+  function pickFresh(words, seen) {
+    const sorted = shuffle(words.slice()).sort((a, b) => (seen[a.word] || 0) - (seen[b.word] || 0));
+    return pick(sorted.slice(0, Math.max(1, Math.min(sorted.length, Math.ceil(sorted.length / 3)))));
+  }
+  function makeSpellQuestion(level, track, used, name, st) {
+    const lv = Math.min(SPELL_MAX_LEVEL, Math.max(1, level));
+    const ids = (SPELL_LEVELS[lv] || SPELL_LEVELS[1]).filter(id => UNIT_BY_ID[id]);
+    const seen = seenMap(name);
+    st = st || {};
+    const freshIn = id => UNIT_BY_ID[id].words.filter(w => !used[w.word]);
+    // A shuffled "bag" of this level's rules: each rule gets one turn before any gets a second.
+    if (st.bagLevel !== lv || !st.bag || !st.bag.length) {
+      st.bag = shuffle(ids.slice()); st.bagLevel = lv;
+      if (st.bag.length > 1 && st.bag[0] === st.lastUnit) st.bag.push(st.bag.shift());
+    }
+    let unitId = null;
+    while (st.bag.length && !unitId) {
+      const id = st.bag.shift();
+      if (freshIn(id).length && (id !== st.lastUnit || ids.length === 1)) unitId = id;
+    }
+    if (!unitId) {   // bag ran dry of usable rules: any rule with unused words, else anything
+      const open = ids.filter(id => freshIn(id).length && id !== st.lastUnit);
+      unitId = open.length ? pick(open) : pick(ids.filter(id => freshIn(id).length).concat(ids));
+    }
+    const pool = freshIn(unitId);
+    const w = pickFresh(pool.length ? pool : UNIT_BY_ID[unitId].words, seen);
+    st.lastUnit = unitId;
+    return spellQ(w, track);
   }
   function ruleTip(w) { return w.tip || (UNIT_BY_ID[w.unit] ? UNIT_BY_ID[w.unit].rule : ""); }
   // The word with its tricky chunk highlighted, e.g. fic<b>tion</b>.
@@ -564,12 +599,25 @@
   }
   function blankSentence(w) { return w.sentence.replace(new RegExp("\\b" + w.word + "\\b", "gi"), "_____"); }
 
-  // ---------- Read-aloud (the device's built-in voice) ----------
+  // ---------- Read-aloud ----------
+  // Pre-recorded clips (audio/, made by tools/make-audio.mjs) when they exist; otherwise the
+  // device's built-in voice. Speech ignores the sound-effects mute: spelling can't work if kids
+  // can't hear the word.
+  const CLIPS = window.SPELLING_AUDIO && Array.isArray(window.SPELLING_AUDIO.words) ? window.SPELLING_AUDIO : null;
+  const CLIP_WORDS = {};
+  if (CLIPS) CLIPS.words.forEach(w => { CLIP_WORDS[w] = 1; });
   const canSpeak = "speechSynthesis" in window && typeof SpeechSynthesisUtterance !== "undefined";
+  function canListen() { return canSpeak || !!CLIPS; }
+
+  // --- built-in voice (fallback) ---
   let voice = null;
   function pickVoice() {
     if (!canSpeak) return null;
     const vs = speechSynthesis.getVoices().filter(v => /^en[-_]/i.test(v.lang));
+    // Downloaded high-quality voices sound far better than the defaults, so try those first.
+    const good = vs.find(v => /premium|enhanced|natural|neural/i.test(v.name) && /en[-_]US/i.test(v.lang)) ||
+                 vs.find(v => /premium|enhanced|natural|neural/i.test(v.name));
+    if (good) return good;
     const preferred = ["Samantha", "Google US English", "Microsoft Aria", "Microsoft Jenny", "Karen", "Moira", "Daniel"];
     for (let i = 0; i < preferred.length; i++) {
       const v = vs.find(x => x.name.indexOf(preferred[i]) === 0);
@@ -578,25 +626,116 @@
     return vs.find(v => /en[-_]US/i.test(v.lang)) || vs[0] || null;
   }
   if (canSpeak) { voice = pickVoice(); speechSynthesis.onvoiceschanged = () => { voice = pickVoice(); }; }
-  // Speech ignores the sound-effects mute: spelling can't work if kids can't hear the word.
-  function speak(text, rate) {
+  // Queue several utterances (e.g. the word slowly, then the sentence at normal speed).
+  function speakParts(parts) {
     if (!canSpeak) return;
     try {
       speechSynthesis.cancel();
-      const u = new SpeechSynthesisUtterance(text);
       if (!voice) voice = pickVoice();
-      if (voice) { u.voice = voice; u.lang = voice.lang; } else u.lang = "en-US";
-      u.rate = rate || 0.85;
-      speechSynthesis.speak(u);
+      parts.forEach(p => {
+        const u = new SpeechSynthesisUtterance(p.text);
+        if (voice) { u.voice = voice; u.lang = voice.lang; } else u.lang = "en-US";
+        u.rate = p.rate || 0.95;
+        speechSynthesis.speak(u);
+      });
     } catch (e) {}
   }
-  // Spelling-test style: "fiction. I like to read fiction books. fiction."
-  function sayWord(w, withSentence) { speak(withSentence ? w.word + ". " + w.sentence + " " + w.word + "." : w.word); }
-  function spellItOut(w) { speak(w.word + ". " + w.word.split("").join(", ") + ". " + w.word + ".", 0.8); }
+
+  // --- pre-recorded clips (Web Audio: exact pauses, no tap needed for each word) ---
+  let voiceCtx = null, voiceSources = [], voiceToken = 0;
+  const clipCache = {};
+  function voiceContext() {
+    if (!voiceCtx) {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      if (!AC) return null;
+      // iPad/iPhone: play the words even when the silent switch is on (Safari 17+).
+      try { if (navigator.audioSession) navigator.audioSession.type = "playback"; } catch (e) {}
+      try { voiceCtx = new AC(); } catch (e) { return null; }
+    }
+    return voiceCtx;
+  }
+  // Browsers only let audio start after a tap or key press, so wake the audio up on each one.
+  function unlockVoice() {
+    const ctx = CLIPS && voiceContext();
+    if (ctx && ctx.state !== "running") ctx.resume().catch(() => {});
+  }
+  ["click", "touchend", "keydown"].forEach(ev => document.addEventListener(ev, unlockVoice, true));
+  // Trim the silence around each clip, so the pauses are exactly the ones we ask for.
+  function trimClip(buf) {
+    const d = buf.getChannelData(0), th = 0.01;
+    let a = 0, b = d.length - 1;
+    while (a < b && Math.abs(d[a]) < th) a++;
+    while (b > a && Math.abs(d[b]) < th) b--;
+    const start = Math.max(0, a / buf.sampleRate - 0.03), end = Math.min(buf.duration, b / buf.sampleRate + 0.08);
+    return { buf: buf, start: start, dur: Math.max(0.05, end - start) };
+  }
+  function loadClip(name) {
+    if (!clipCache[name]) {
+      clipCache[name] = fetch("audio/" + name + "." + (CLIPS.ext || "mp3") + "?v=" + CLIPS.v)
+        .then(r => { if (!r.ok) throw new Error("HTTP " + r.status); return r.arrayBuffer(); })
+        .then(data => new Promise((res, rej) => voiceContext().decodeAudioData(data, res, rej)))
+        .then(trimClip)
+        .catch(e => { delete clipCache[name]; throw e; });
+    }
+    return clipCache[name];
+  }
+  function stopVoice() {
+    voiceToken++;
+    voiceSources.forEach(src => { try { src.stop(); } catch (e) {} });
+    voiceSources = [];
+    if (canSpeak) { try { speechSynthesis.cancel(); } catch (e) {} }
+  }
+  // parts: clip names ("w/bird", "s/bird", "l/b") and pauses in seconds, played in order.
+  // If anything can't load, it's said with the built-in voice instead.
+  function playClips(parts, fallback) {
+    stopVoice();
+    const token = voiceToken, ctx = voiceContext();
+    if (!ctx) { fallback(); return; }
+    Promise.all(parts.filter(p => typeof p === "string").map(loadClip)).then(clips => {
+      if (token !== voiceToken) return;
+      return (ctx.state === "running" ? Promise.resolve() : ctx.resume()).then(() => {
+        if (token !== voiceToken) return;
+        let t = ctx.currentTime + 0.05, i = 0;
+        parts.forEach(p => {
+          if (typeof p === "number") { t += p; return; }
+          const c = clips[i++], src = ctx.createBufferSource();
+          src.buffer = c.buf;
+          src.connect(ctx.destination);
+          src.start(t, c.start, c.dur);
+          voiceSources.push(src);
+          t += c.dur;
+        });
+      });
+    }).catch(() => { if (token === voiceToken) fallback(); });
+  }
+  function preloadLetters() {
+    if (CLIPS && CLIPS.letters) "abcdefghijklmnopqrstuvwxyz".split("").forEach(c => loadClip("l/" + c).catch(() => {}));
+  }
+
+  // --- what the game says ---
+  // Spelling-test style: the word on its own, a pause, then the word in a sentence.
+  function sayWord(w, withSentence) {
+    const fallback = () => speakParts([{ text: w.word, rate: 0.8 }].concat(withSentence ? [{ text: w.sentence, rate: 0.95 }] : []));
+    if (!CLIP_WORDS[w.word]) { fallback(); return; }
+    playClips(withSentence ? ["w/" + w.word, 0.6, "s/" + w.word] : ["w/" + w.word], fallback);
+  }
+  function saySentence(w) {
+    const fallback = () => speakParts([{ text: w.sentence, rate: 0.95 }]);
+    if (!CLIP_WORDS[w.word]) { fallback(); return; }
+    playClips(["s/" + w.word], fallback);
+  }
+  // After a miss: "lunch … L, U, N, C, H."
+  function spellItOut(w) {
+    const fallback = () => speakParts([{ text: w.word, rate: 0.85 }, { text: w.word.toUpperCase().split("").join(". ") + ".", rate: 0.8 }]);
+    if (!CLIP_WORDS[w.word] || !CLIPS.letters) { fallback(); return; }
+    const parts = ["w/" + w.word, 0.45];
+    w.word.split("").forEach((c, i) => { if (i) parts.push(0.16); parts.push("l/" + c); });
+    playClips(parts, fallback);
+  }
   function replayQuestion() {
     if (!g || !g.current || g.track === "math") return;
     const q = g.current;
-    if (g.track === "chunk" && q.unit && q.unit.homophone) speak(q.w.sentence);
+    if (g.track === "chunk" && q.unit && q.unit.homophone) saySentence(q.w);
     else sayWord(q.w, g.track === "spell");
   }
 
@@ -612,8 +751,8 @@
     $("chunkOpts").style.display = track === "chunk" ? "" : "none";
     $("answerBox").style.display = track === "chunk" ? "none" : "";
     $("listenBtn").style.display = track === "math" ? "none" : "";
-    $("listenBtn").disabled = !canSpeak;
-    $("listenBtn").textContent = canSpeak ? "🔊 Hear it again" : "🔇 This device can't read words aloud";
+    $("listenBtn").disabled = !canListen();
+    $("listenBtn").textContent = canListen() ? "🔊 Hear it again" : "🔇 This device can't read words aloud";
     $("problemCard").classList.toggle("spelling", track !== "math");
     $("skipBtn").textContent = track === "math" ? "🤔 Skip this one" : "🤔 Skip this word";
   }
@@ -630,7 +769,7 @@
       if (q.unit && q.unit.homophone) {
         qEl.className = "question q-listen"; qEl.textContent = "Which word fits?";
         sEl.textContent = blankSentence(q.w); sEl.style.display = "";
-        speak(q.w.sentence);
+        saySentence(q.w);
       } else {
         qEl.className = "question"; qEl.innerHTML = gappedWord(q.w);
         sayWord(q.w, false);
@@ -696,6 +835,7 @@
       mode: "game",
       track: track,
       used: {},                  // spelling words already asked this round (avoid repeats)
+      pickState: {},             // spelling: rule rotation for this round
       ops: set.ops,
       name: name,
       score: 0,
@@ -721,6 +861,7 @@
     };
     setHudMode("game");
     setInputMode(track);
+    if (track !== "math") preloadLetters();
     show("game");
     updateHud();
     nextProblem();
@@ -737,7 +878,34 @@
     $("hudTimeBox").classList.remove("warn");
     $("timerFill").style.width = drill ? "0%" : "100%";
     $("endDrillBtn").style.display = drill ? "" : "none";
+    $("quitBtn").style.display = drill ? "none" : "";
+    resetQuitBtn();
     $("comboFlash").textContent = "";
+  }
+
+  // Quit a round in progress: nothing is saved. Two taps, so a stray tap doesn't end the game.
+  let quitTimer = null;
+  function resetQuitBtn() {
+    clearTimeout(quitTimer); quitTimer = null;
+    $("quitBtn").textContent = "✖ Quit game";
+    $("quitBtn").classList.remove("confirm");
+  }
+  function quitGame() {
+    if (!g || g.ended || g.mode !== "game") return;
+    if (!quitTimer) {
+      $("quitBtn").textContent = "Tap again to quit (this round won't be saved)";
+      $("quitBtn").classList.add("confirm");
+      quitTimer = setTimeout(resetQuitBtn, 3500);
+      return;
+    }
+    resetQuitBtn();
+    g.ended = true; g.locked = true;
+    if (tickHandle) { clearInterval(tickHandle); tickHandle = null; }
+    stopVoice();
+    const name = g.name;
+    refreshHome();
+    preselectPlayer(name);
+    show("home");
   }
 
   // An untimed drill. Misses come back (with a hint) until answered.
@@ -746,7 +914,10 @@
   function drillQueue(name, d) {
     if (d.kind === "rule") {
       const unit = UNIT_BY_ID[d.unit];
-      return unit ? shuffle(unit.words.slice()).slice(0, 10).map(w => spellQ(w, d.track)) : [];
+      if (!unit) return [];
+      const seen = seenMap(name);   // the 10 words this kid has seen least recently, in random order
+      const least = shuffle(unit.words.slice()).sort((a, b) => (seen[a.word] || 0) - (seen[b.word] || 0)).slice(0, 10);
+      return shuffle(least).map(w => spellQ(w, d.track));
     }
     const pd = store.players[name] ? normalize(store.players[name]) : null;
     const items = pd ? trickyItems(pd, d.subject) : [];
@@ -768,6 +939,7 @@
     };
     setHudMode("drill");
     setInputMode(track);
+    if (track !== "math") preloadLetters();
     show("game");
     updateHud();
     nextProblem();
@@ -794,9 +966,10 @@
     } else if (g.track === "math") {
       g.current = makeProblem(g.level, g.ops);
     } else {
-      g.current = makeSpellQuestion(g.level, g.track, g.used);
+      g.current = makeSpellQuestion(g.level, g.track, g.used, g.name, g.pickState);
       g.used[g.current.word] = 1;
     }
+    if (g.track !== "math" && g.current.word) markSeen(g.name, g.current.word);
     g.input = "";
     g.askedAt = nowMs();
     g.locked = false;
@@ -886,7 +1059,8 @@
       }
 
       updateHud();
-      setTimeout(() => { card.classList.remove("correct"); if (g.timeLeft > 0) nextProblem(); }, g.track === "math" ? 420 : 900);
+      const me = g;
+      setTimeout(() => { card.classList.remove("correct"); if (g === me && g.timeLeft > 0) nextProblem(); }, g.track === "math" ? 420 : 900);
     } else {
       g.locked = true;
       g.streak = 0;
@@ -914,7 +1088,8 @@
       registerMiss();
       updateHud();
       // Show the answer (spelling: with its rule; math drills: a hint) briefly, then move on.
-      setTimeout(() => { card.classList.remove("wrong"); if (g.timeLeft > 0) nextProblem(); },
+      const me = g;
+      setTimeout(() => { card.classList.remove("wrong"); if (g === me && g.timeLeft > 0) nextProblem(); },
         spelling ? (g.track === "spell" ? 4500 : 3000) : drill ? 3200 : 1400);
     }
   }
@@ -957,7 +1132,8 @@
     if (drill) requeueInDrill();
     registerMiss();
     updateHud();
-    setTimeout(() => { if (g.timeLeft > 0) nextProblem(); },
+    const me = g;
+    setTimeout(() => { if (g === me && g.timeLeft > 0) nextProblem(); },
       spelling ? (g.track === "spell" ? 4500 : 3000) : drill ? 3200 : 1400);
   }
 
@@ -1336,7 +1512,7 @@
   // ---------- Tricky facts (Practice tab) ----------
   let trickyKid = null;
   function trickyNames() {
-    const others = Object.keys(store.players).filter(n => KIDS.indexOf(n) < 0 && (store.players[n].history || []).length);
+    const others = Object.keys(store.players).filter(n => KIDS.indexOf(n) < 0 && HIDDEN_PLAYERS.indexOf(n.toLowerCase()) < 0 && (store.players[n].history || []).length);
     return KIDS.concat(others).slice(0, 4);
   }
   function renderTricky() {
@@ -1402,7 +1578,7 @@
       '<div class="rule-name">' + u.emoji + " " + esc(u.name) + "</div>" +
       '<div class="rule-text">' + esc(u.rule) + "</div>" +
       '<div class="rule-words">' + u.words.map(w => '<button class="rule-word speakable" data-word="' + esc(w.word) + '">' + markChunk(w) + "</button>").join("") + "</div>" +
-      '<div class="rule-hint">' + (canSpeak ? "Tap a word to hear it in a sentence." : "") + "</div>";
+      '<div class="rule-hint">' + (canListen() ? "Tap a word to hear it in a sentence." : "") + "</div>";
   }
   function openPractice() {
     if (!$("numPicker").children.length) buildNumPicker();
@@ -1770,6 +1946,7 @@
     if (btn) pressKey(btn.getAttribute("data-k"));
   });
   $("skipBtn").addEventListener("click", skipQuestion);
+  $("quitBtn").addEventListener("click", quitGame);
 
   document.addEventListener("keydown", e => {
     if (!screens.game.classList.contains("active") || !g || e.metaKey || e.ctrlKey || e.altKey) return;
