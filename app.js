@@ -51,24 +51,36 @@
   ];
   const ALL_BADGES = BADGES.concat(SPELL_BADGES);
   // Which rule units each spelling level mixes in (adaptive like math: 5 right → up, 3 misses → down).
+  // Levels 1–3 follow UFLI Foundations' early lessons (short vowels → FLSZ → -all/-oll/-ull → digraphs).
   const SPELL_LEVELS = {
-    1: ["ck", "digraph"],
-    2: ["digraph", "magic-e", "vowel-team"],
-    3: ["magic-e", "vowel-team", "r-control", "tch-dge", "heart"],
-    4: ["r-control", "heart", "soft-cg", "double", "endings"],
-    5: ["soft-cg", "double", "endings", "y-to-i", "tion", "suffix"],
-    6: ["y-to-i", "tion", "suffix", "schwa", "homophone"],
+    1: ["cvc", "flsz"],
+    2: ["flsz", "glued", "heart1"],
+    3: ["glued", "heart1", "ck", "digraph"],
+    4: ["digraph", "magic-e", "vowel-team"],
+    5: ["magic-e", "vowel-team", "r-control", "tch-dge", "heart"],
+    6: ["r-control", "heart", "soft-cg", "double", "endings"],
+    7: ["soft-cg", "double", "endings", "y-to-i", "tion", "suffix"],
+    8: ["y-to-i", "tion", "suffix", "schwa", "homophone"],
   };
-  const SPELL_MAX_LEVEL = 6;
+  const SPELL_MAX_LEVEL = 8;
   const SPELL_LEVEL_INFO = {
-    1: "Short vowels, -ck, and sh / ch / th / wh",
-    2: "sh / ch / th / wh, magic e, and vowel teams",
-    3: "Magic e, vowel teams, bossy r, -tch / -dge, heart words",
-    4: "Bossy r, heart words, soft c & g, double consonants, -ing / -ed",
-    5: "Soft c & g, doubles, endings, y → i, -tion, suffixes",
-    6: "y → i, -tion, suffixes, quiet vowels (schwa), homophones",
+    1: "Short vowels and double f / l / s / z (puff, bell, miss, buzz)",
+    2: "Double f / l / s / z, -all / -oll / -ull, first heart words (go, no, so)",
+    3: "-all / -oll / -ull, heart words, -ck, and sh / ch / th / wh",
+    4: "sh / ch / th / wh, magic e, and vowel teams",
+    5: "Magic e, vowel teams, bossy r, -tch / -dge, heart words",
+    6: "Bossy r, heart words, soft c & g, double consonants, -ing / -ed",
+    7: "Soft c & g, doubles, endings, y → i, -tion, suffixes",
+    8: "y → i, -tion, suffixes, quiet vowels (schwa), homophones",
   };
-  const SPELL_START = { Evelyn: 4, JD: 2 };   // default spelling starting levels (grown-ups can change)
+  const SPELL_START = { Evelyn: 6, JD: 2 };   // default spelling starting levels (grown-ups can change)
+  // Two beginner levels were added below the original six (Nov 2026). Spelling levels saved before
+  // then (settings without ss:2, games without ls:2) are on the old scale: add 2 when reading them.
+  const SPELL_SCALE = 2, SPELL_SHIFT = 2;
+  function gameLevel(h) {
+    const lv = h.level || 1;
+    return (h.track === "spell" || h.track === "chunk") && h.ls !== SPELL_SCALE ? Math.min(SPELL_MAX_LEVEL, lv + SPELL_SHIFT) : lv;
+  }
   const TRACK_NAME = { math: "Math", spell: "Spell It", chunk: "Fix the Chunk" };
   // Points per right answer: base + a speed bonus that fades over `window` seconds, times the combo.
   const TRACK_SCORING = {
@@ -138,7 +150,9 @@
     return {
       startLevel: s && typeof s.startLevel === "number" ? Math.min(MAX_START_LEVEL, Math.max(1, s.startLevel)) : (STARTING_LEVEL[name] || 1),
       ops: ops.length ? ops : ALL_OPS.slice(),
-      spellLevel: s && typeof s.spellLevel === "number" ? Math.min(SPELL_MAX_LEVEL, Math.max(1, s.spellLevel)) : (SPELL_START[name] || 1),
+      spellLevel: s && typeof s.spellLevel === "number"
+        ? Math.min(SPELL_MAX_LEVEL, Math.max(1, s.spellLevel + (s.ss === SPELL_SCALE ? 0 : SPELL_SHIFT)))
+        : (SPELL_START[name] || 1),
     };
   }
   // Records, stats and tricky lists are kept per track: "math", "spell" (Spell It), "chunk" (Fix the Chunk).
@@ -192,7 +206,7 @@
     items.forEach(h => {
       sum += h.score || 0;
       if ((h.score || 0) > best) best = h.score;
-      if ((h.level || 1) > top) top = h.level;
+      if (gameLevel(h) > top) top = gameLevel(h);
     });
     return {
       games: items.length, best: best, topLevel: top, history: sorted,
@@ -258,6 +272,7 @@
     const body = { score: entry.score, level: entry.level, solved: entry.solved, ts: entry.ts, len: entry.len || 60 };
     if (entry.missed) body.missed = entry.missed;   // facts / words missed that round (feeds the tricky lists)
     if (entry.track && entry.track !== "math") body.track = entry.track;
+    if (entry.ls) body.ls = entry.ls;
     return cloudFetch("players/" + encodeURIComponent(name) + "/history/" + encodeURIComponent(entry.id),
       { method: "PUT", body: JSON.stringify(body) });
   }
@@ -280,6 +295,7 @@
   function cloudPushSettings(name, s) {
     const body = { startLevel: s.startLevel, ops: s.ops, ts: s.ts };
     if (typeof s.spellLevel === "number") body.spellLevel = s.spellLevel;
+    if (s.ss) body.ss = s.ss;
     return cloudFetch("settings/" + encodeURIComponent(name), { method: "PUT", body: JSON.stringify(body) });
   }
   function cloudPushBadge(name, badgeId) {
@@ -715,23 +731,25 @@
   // --- what the game says ---
   // Spelling-test style: the word on its own, a pause, then the word in a sentence.
   function sayWord(w, withSentence) {
-    const fallback = () => speakParts([{ text: w.word, rate: 0.8 }].concat(withSentence ? [{ text: w.sentence, rate: 0.95 }] : []));
+    const fallback = () => speakParts([{ text: w.word, rate: 0.7 }].concat(withSentence ? [{ text: w.sentence, rate: 0.8 }] : []));
     if (!CLIP_WORDS[w.word]) { fallback(); return; }
-    playClips(withSentence ? ["w/" + w.word, 0.6, "s/" + w.word] : ["w/" + w.word], fallback);
+    playClips(withSentence ? ["w/" + w.word, 0.9, "s/" + w.word] : ["w/" + w.word], fallback);
   }
   function saySentence(w) {
-    const fallback = () => speakParts([{ text: w.sentence, rate: 0.95 }]);
+    const fallback = () => speakParts([{ text: w.sentence, rate: 0.8 }]);
     if (!CLIP_WORDS[w.word]) { fallback(); return; }
     playClips(["s/" + w.word], fallback);
   }
   // After a miss: "lunch … L, U, N, C, H."
   function spellItOut(w) {
-    const fallback = () => speakParts([{ text: w.word, rate: 0.85 }, { text: w.word.toUpperCase().split("").join(". ") + ".", rate: 0.8 }]);
+    const fallback = () => speakParts([{ text: w.word, rate: 0.75 }, { text: w.word.toUpperCase().split("").join(". ") + ".", rate: 0.7 }]);
     if (!CLIP_WORDS[w.word] || !CLIPS.letters) { fallback(); return; }
-    const parts = ["w/" + w.word, 0.45];
-    w.word.split("").forEach((c, i) => { if (i) parts.push(0.16); parts.push("l/" + c); });
+    const parts = ["w/" + w.word, 0.7];
+    w.word.split("").forEach((c, i) => { if (i) parts.push(0.3); parts.push("l/" + c); });
     playClips(parts, fallback);
   }
+  // How long to leave a missed word on screen: enough for "word … L, E, T, T, E, R" to finish.
+  function spellPause(w) { return Math.max(4000, 2600 + w.word.length * 800); }
   function replayQuestion() {
     if (!g || !g.current || g.track === "math") return;
     const q = g.current;
@@ -1090,7 +1108,7 @@
       // Show the answer (spelling: with its rule; math drills: a hint) briefly, then move on.
       const me = g;
       setTimeout(() => { card.classList.remove("wrong"); if (g === me && g.timeLeft > 0) nextProblem(); },
-        spelling ? (g.track === "spell" ? 4500 : 3000) : drill ? 3200 : 1400);
+        spelling ? spellPause(g.current.w) : drill ? 3200 : 1400);
     }
   }
 
@@ -1134,7 +1152,7 @@
     updateHud();
     const me = g;
     setTimeout(() => { if (g === me && g.timeLeft > 0) nextProblem(); },
-      spelling ? (g.track === "spell" ? 4500 : 3000) : drill ? 3200 : 1400);
+      spelling ? spellPause(g.current.w) : drill ? 3200 : 1400);
   }
 
   function comboMultiplier(streak) {
@@ -1229,8 +1247,8 @@
     if (spelling) {
       award("sp-first");
       if (g.bestStreak >= 10) award("sp-streak");
-      if (g.maxLevel >= 5) award("sp-rules");
-      if (g.maxLevel >= 6) award("sp-master");
+      if (g.maxLevel >= 7) award("sp-rules");
+      if (g.maxLevel >= SPELL_MAX_LEVEL) award("sp-master");
       if (g.correct >= 25) award("sp-century");
       if (g.correct >= 8 && !g.wrong && !g.skips) award("sp-perfect");
     } else {
@@ -1250,7 +1268,7 @@
       const missedTexts = [];
       g.misses.forEach(mi => { if (missedTexts.indexOf(mi.text) < 0) missedTexts.push(mi.text); });
       if (missedTexts.length) recordedEntry.missed = missedTexts.slice(0, 12).join("|");
-      if (spelling) recordedEntry.track = track;
+      if (spelling) { recordedEntry.track = track; recordedEntry.ls = SPELL_SCALE; }
       pd.history.unshift(recordedEntry);
       pd.history = pd.history.slice(0, 500);
       recompute(pd);
@@ -1484,7 +1502,7 @@
         row.className = "hist-row";
         row.innerHTML =
           '<span class="h-score">' + h.score + '</span>' +
-          '<span class="h-meta">Lv ' + h.level + ' · ' + h.solved + (spelling ? " words" : " solved") + '</span>' +
+          '<span class="h-meta">Lv ' + gameLevel(h) + ' · ' + h.solved + (spelling ? " words" : " solved") + '</span>' +
           '<span class="h-date">' + when + '</span>';
         list.appendChild(row);
       });
@@ -1651,7 +1669,7 @@
     return KIDS.map((k, i) => {
       const pd = store.players[k] ? normalize(store.players[k]) : null;
       const games = pd ? lengthStats(pd, len, track).history.slice().reverse() : [];
-      const pts = games.map((h, j) => ({ n: j + 1, score: h.score || 0, ts: h.ts, level: h.level })).slice(-30);
+      const pts = games.map((h, j) => ({ n: j + 1, score: h.score || 0, ts: h.ts, level: gameLevel(h) })).slice(-30);
       return { name: k, color: SERIES_COLORS[i], pts: pts };
     });
   }
@@ -1817,7 +1835,7 @@
       } else ops.push(op);
       ops = ALL_OPS.filter(o => ops.indexOf(o) >= 0);   // stable order
     } else return;
-    const rec = { startLevel: level, ops: ops.join(","), spellLevel: spellLevel, ts: Date.now() };
+    const rec = { startLevel: level, ops: ops.join(","), spellLevel: spellLevel, ss: SPELL_SCALE, ts: Date.now() };
     store.settings[kid] = rec;
     saveStore(store);
     if (cloudEnabled()) trackExtras([cloudPushSettings(kid, rec)]);

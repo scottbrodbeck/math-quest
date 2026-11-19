@@ -22,6 +22,12 @@ import { fileURLToPath } from "node:url";
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const OUT = path.join(ROOT, "audio");
 const EXT = "m4a";   // AAC: small, and plays in Safari, Chrome, Edge and Firefox
+// Pacing for young listeners (words per minute). Samantha's normal pace is about 180 and it only
+// slows in steps: 70 or below is its slowest (about 30% slower), 80–90 about 20% slower.
+// (Pausing between every word sounds choppy, so the app adds pauses between clips instead.)
+const WORD_RATE = 70;       // the spelling word on its own
+const SENTENCE_RATE = 70;   // the example sentence
+const LETTER_RATE = 80;     // letter names when a word is spelled out
 // Letter names spelled the way they're said, so the voice never reads "a" as "uh".
 const LETTER_SAY = {
   a: "ay", b: "bee", c: "see", d: "dee", e: "ee", f: "eff", g: "jee", h: "aitch", i: "eye",
@@ -51,10 +57,10 @@ ctx.window.SPELLING_UNITS.forEach(u => u.words.forEach(line => {
 }));
 
 const tmp = path.join(os.tmpdir(), "make-audio-" + process.pid + ".aiff");
-function record(text, file) {
+function record(text, file, rate) {
   if (!force && !only.length && fs.existsSync(file)) return false;
   fs.mkdirSync(path.dirname(file), { recursive: true });
-  execFileSync("say", ["-v", voice, "-o", tmp, text]);
+  execFileSync("say", ["-v", voice, "-r", String(rate), "-o", tmp, text]);
   execFileSync("afconvert", ["-f", "m4af", "-d", "aac", "-b", "48000", "-c", "1", tmp, file]);
   return true;
 }
@@ -62,11 +68,11 @@ function record(text, file) {
 let made = 0;
 words.forEach((w, i) => {
   if (only.length && only.indexOf(w.word) < 0) return;
-  if (record((WORD_SAY[w.word] || w.word) + ".", path.join(OUT, "w", w.word + "." + EXT))) made++;
-  if (record(w.sentence, path.join(OUT, "s", w.word + "." + EXT))) made++;
+  if (record((WORD_SAY[w.word] || w.word) + ".", path.join(OUT, "w", w.word + "." + EXT), WORD_RATE)) made++;
+  if (record(w.sentence, path.join(OUT, "s", w.word + "." + EXT), SENTENCE_RATE)) made++;
   if ((i + 1) % 50 === 0) console.log(`  ${i + 1}/${words.length} words`);
 });
-if (!only.length) Object.keys(LETTER_SAY).forEach(c => { if (record(LETTER_SAY[c] + ".", path.join(OUT, "l", c + "." + EXT))) made++; });
+if (!only.length) Object.keys(LETTER_SAY).forEach(c => { if (record(LETTER_SAY[c] + ".", path.join(OUT, "l", c + "." + EXT), LETTER_RATE)) made++; });
 try { fs.unlinkSync(tmp); } catch (e) {}
 
 // Index of which clips exist (a word counts only if both its clips do).
